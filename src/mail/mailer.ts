@@ -1,25 +1,31 @@
-import nodemailer from 'nodemailer';
-import dotenv from 'dotenv';
+import nodemailer from "nodemailer";
+import dotenv from "dotenv";
 
 dotenv.config();
 
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
-  port: parseInt(process.env.SMTP_PORT || '587'),
+  port: parseInt(process.env.SMTP_PORT || "587"),
   secure: false,
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
+  
 });
 
-export const sendMail = async (to: string, subject: string, text: string) => {
+export const sendMail = async (
+  from: string,
+  to: string,
+  subject: string,
+  text: string,
+) => {
   const info = await transporter.sendMail({
-    from: process.env.SMTP_USER,
+    from, //process.env.SMTP_USER,
     to,
     subject,
     text,
   });
 
-  console.log('Email sent:', info.messageId);
+  console.log("Email sent:", info.messageId);
 };

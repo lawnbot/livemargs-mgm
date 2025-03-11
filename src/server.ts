@@ -46,15 +46,17 @@ const expressServer = app.listen(PORT, () => {
 });
 
 
-const wss = new WebSocketServer({
-  noServer: true, // Server is attached to express instance!
-  path: "/websockets",
-});
 
 expressServer.on("upgrade", (request, socket, head) => {
   wss.handleUpgrade(request, socket, head, (websocket) => {
     wss.emit("connection", websocket, request);
   });
+
 });
+const wss = new WebSocketServer({
+  noServer: true, // Server is attached to express instance!
+  path: "/websockets",
+});
+
 export {wss};
 

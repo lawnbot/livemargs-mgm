@@ -106,7 +106,7 @@ async function llmSearch(query: string): Promise<string> {
         question: query,
         context: retrievedDocs,
     });
-
+    
     console.log("Generated response:", result);
     return result;
 } 

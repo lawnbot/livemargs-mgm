@@ -9,6 +9,20 @@ import { sendMail } from "../mail/mailer.js";
 import dotenv from "dotenv";
 dotenv.config();
 
+export const testMail = async (req: Request, res: Response) => {
+    const { email } = req.body as { email: string };
+
+
+    await sendMail(
+        "info@echo-motorgeraete.de",
+        email,
+        "Testmail from livemargs-mgm",
+        "Test",
+    );
+
+    res.send("Could send testmail.");
+};
+
 export const sendLoginLink = async (req: Request, res: Response) => {
     const { email } = req.body as { email: string };
 
@@ -23,6 +37,7 @@ export const sendLoginLink = async (req: Request, res: Response) => {
     await client.set(`auth:${email}`, token, { EX: 900 }); // 15 minutes
 
     await sendMail(
+        "info@echo-motorgeraete.de",
         email,
         "Your login link",
         `http://localhost:3000/auth/verify?token=${token}`,
@@ -43,6 +58,7 @@ export const sendLoginPIN = async (req: Request, res: Response) => {
     await client.set(`auth:${email}`, pin, { EX: 900 }); // 15 minutes
 
     await sendMail(
+        "info@echo-motorgeraete.de",
         email,
         "Your login PIN",
         `Your login PIN is: ${pin}`,

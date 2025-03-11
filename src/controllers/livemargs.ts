@@ -116,7 +116,7 @@ const createTokenForRoomAndParticipant = async (
     return await at.toJwt();
 };
 
-wss.on(
+/* wss.on(
     "connection",
     function connection(websocketConnection, connectionRequest) {
         //const [_path, params] = connectionRequest?.url?.split("?");
@@ -145,7 +145,7 @@ wss.on(
             );
         });
     },
-);
+); */
 
 //websocketServer.clients.forEach()
 function broadcastQueuePositions() {

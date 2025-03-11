@@ -1,5 +1,5 @@
 import { Request, Response, Router } from "express";
-
+import { getAIResult, streamAIResult } from "../controllers/ai.js";
 export const aiRoutes = Router();
 
 aiRoutes.post("/calc", (req: Request, res: Response): void => {
@@ -17,3 +17,7 @@ aiRoutes.post("/calc", (req: Request, res: Response): void => {
         });
     }
 });
+
+aiRoutes.post("/stream-ai", streamAIResult);
+
+aiRoutes.post("/ai-result", getAIResult);
