@@ -12,7 +12,6 @@ dotenv.config();
 export const testMail = async (req: Request, res: Response) => {
     const { email } = req.body as { email: string };
 
-
     await sendMail(
         process.env.SMTP_SENDING_MAIL_ADDRESS ?? "",
         email,
@@ -67,8 +66,11 @@ export const sendLoginPIN = async (req: Request, res: Response) => {
 };
 
 export const verifyPIN = async (req: Request, res: Response) => {
-    const { email, pin } = req.query as { email: string; pin: string };
+    const { email, pin } = req.body as { email: string; pin: string };
+
     const storedPin = await client.get(`auth:${email}`);
+    // console.log("PIN " + pin);
+    // console.log("storedPin " + storedPin);
 
     if (storedPin === pin) {
         const accessToken = jwt.sign({ email }, process.env.JWT_SECRET!, {
@@ -89,7 +91,7 @@ export const verifyPIN = async (req: Request, res: Response) => {
 };
 
 export const verifyToken = async (req: Request, res: Response) => {
-    const { token } = req.query as { token: string };
+    const { token } = req.body as { token: string };
     try {
         const payload = jwt.verify(token, process.env.JWT_SECRET!) as {
             email: string;
@@ -155,7 +157,9 @@ export function authenticateTokenMiddleWare(
     next: NextFunction,
 ): void {
     const authHeader = req.headers["authorization"];
+    //console.log("Auth Header: " + authHeader);
     const token = (authHeader && authHeader.split(" ")[1]) ?? "";
+    //console.log("token: " + token);
 
     if (token === "") next(new Error401Unauthorized("Token not valid"));
 

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createStandardToken,getParticipantDetail } from "../controllers/livemargs.js";
+import { createStandardToken,getParticipantDetail } from "../controllers/livekit.js";
 const router: Router = Router();
 
 router.get("/", createStandardToken);

@@ -1,6 +1,6 @@
 import express from 'express';
 import { aiRoutes } from './ai-routes.js';
-import { livemargsRouter } from './livemargs-routes.js';
+import { livemargsRouter } from './livekit-routes.js';
 import { authRouter } from './auth-routes.js';
 
 export const routes = express.Router();
