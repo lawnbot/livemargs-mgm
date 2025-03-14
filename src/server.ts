@@ -41,22 +41,53 @@ function errorHandler(
   // res.status(500).json({ error: err });
 }
 
-const expressServer = app.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
-});
 
-
-
-expressServer.on("upgrade", (request, socket, head) => {
-  wss.handleUpgrade(request, socket, head, (websocket) => {
-    wss.emit("connection", websocket, request);
-  });
-
-});
 const wss = new WebSocketServer({
   noServer: true, // Server is attached to express instance!
   path: "/websockets",
 });
 
-export {wss};
 
+
+wss.on(
+  "connection",
+  function connection(websocketConnection, connectionRequest) {
+    //const [_path, params] = connectionRequest?.url?.split("?");
+    //const connectionParams = queryString.parse(params);
+
+    // NOTE: connectParams are not used here but good to understand how to get
+    // to them if you need to pass data with the connection to identify it (e.g., a userId).
+    //console.log(connectionParams);
+
+    websocketConnection.on("message", (message) => {
+      /*             const { command, user } = JSON.parse(message.toString()) as {
+                command: string;
+                user: User;
+            };
+            if (command === "join") {
+                const position = addUser(user);
+            }
+            if (command === "moderator-availability-tick") {
+                //client.set()
+            } */
+
+      websocketConnection.send(
+        JSON.stringify({
+          message: "There be gold in them thar hills.",
+        }),
+      );
+    });
+  },
+);
+
+const expressServer = app.listen(PORT, () => {
+  console.log(`Server listening on port ${PORT}`);
+});
+
+expressServer.on("upgrade", (request, socket, head) => {
+  wss.handleUpgrade(request, socket, head, (websocket) => {
+    wss.emit("connection", websocket, request);
+  });
+});
+
+export { wss };

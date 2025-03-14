@@ -14,7 +14,7 @@ export const testMail = async (req: Request, res: Response) => {
 
 
     await sendMail(
-        "info@echo-motorgeraete.de",
+        process.env.SMTP_SENDING_MAIL_ADDRESS ?? "",
         email,
         "Testmail from livemargs-mgm",
         "Test",
@@ -37,7 +37,7 @@ export const sendLoginLink = async (req: Request, res: Response) => {
     await client.set(`auth:${email}`, token, { EX: 900 }); // 15 minutes
 
     await sendMail(
-        "info@echo-motorgeraete.de",
+        process.env.SMTP_SENDING_MAIL_ADDRESS ?? "",
         email,
         "Your login link",
         `http://localhost:3000/auth/verify?token=${token}`,
@@ -58,7 +58,7 @@ export const sendLoginPIN = async (req: Request, res: Response) => {
     await client.set(`auth:${email}`, pin, { EX: 900 }); // 15 minutes
 
     await sendMail(
-        "info@echo-motorgeraete.de",
+        process.env.SMTP_SENDING_MAIL_ADDRESS ?? "",
         email,
         "Your login PIN",
         `Your login PIN is: ${pin}`,
@@ -253,6 +253,7 @@ export const sendLoginLink = async (req: Request, res: Response) => {
     const loginLink =
         `http://localhost:3000/login?token=${token}&email=${email}`;
     await sendMail(
+    process.env.SMTP_SENDING_MAIL_ADDRESS ?? "",
         email,
         "Your login link",
         `Click here to log in: ${loginLink}`,

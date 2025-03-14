@@ -37,27 +37,35 @@ Add option to askfor personal help later
 
 Idea 2
 
-If no moderators are available. Show Personal service is not available
+If no moderators are available.
+Show Personal service is not available with regular office times
+Personal service times mean Last Activitiy of any logged in moderator is max 10 minutes old.
 
 End-user goes in AI chatroom automatically if available max 3. Ask personal help if needed.
-Show "Wir haben einen Platz bereits für Sie reserviert. Helfen Sie uns das Thema festzulegen, dass der richtige Kollge sich mit Ihnen verbindet."
+If personal help requested Show "Wir haben einen Platz bereits für Sie reserviert. Helfen Sie uns das Thema festzulegen, dass der richtige Kollge sich mit Ihnen verbindet."
 Area and department is determined.
 
-Can play in room as long as he wants. If personal help is asked own position is determined and Number on waiting list is showed.
+Can play in room as long as he wants with AI.
+If personal help is asked own position is determined and Number on waiting list is showed.
 
 If no moderators are available. Show Personal service is not available
 
 Moderator see the chaat room list and names which are available
 
-
-If Moderator not joined hs see which room ask for personal help.
+If Moderator not joined he sees which room ask for personal help.
 In praxis room is always created.
 
-Challenges: determine number of available moderators. Keep Wss connection. Send all 10 seconds a presence sign
+Challenges: determine number of available moderators. Keep Wss connection. Send all 10 seconds a presence sign of a moderator.
 Get notified once a room is left. Idea: Moderator leaves the room and releases with that a place in a personal chatroom.
 Alternatively manuel Status change and automatic status change once 5 minutes no heartbeat /mousemove happened.
 What happens if more work is still to do after leave??? No automatic releease should be done for such cases
 Manual join is best.
+
+WSS for
+ Send all 10 seconds a presence sign of a moderator.
+ Show moderator availabilty in room channel EndUser.
+  If not available show regular service times of our office
+ Automatic status update of the qeue.
 
 */
 
@@ -115,37 +123,6 @@ const createTokenForRoomAndParticipant = async (
 
     return await at.toJwt();
 };
-
-/* wss.on(
-    "connection",
-    function connection(websocketConnection, connectionRequest) {
-        //const [_path, params] = connectionRequest?.url?.split("?");
-        //const connectionParams = queryString.parse(params);
-
-        // NOTE: connectParams are not used here but good to understand how to get
-        // to them if you need to pass data with the connection to identify it (e.g., a userId).
-        //console.log(connectionParams);
-
-        websocketConnection.on("message", (message) => {
-            const { command, user } = JSON.parse(message.toString()) as {
-                command: string;
-                user: User;
-            };
-            if (command === "join") {
-                const position = addUser(user);
-            }
-            if (command === "moderator-availability-tick") {
-                //client.set()
-            }
-
-            websocketConnection.send(
-                JSON.stringify({
-                    message: "There be gold in them thar hills.",
-                }),
-            );
-        });
-    },
-); */
 
 //websocketServer.clients.forEach()
 function broadcastQueuePositions() {
@@ -221,5 +198,4 @@ async function getActiveModerators(email: string): Promise<number> {
         }
     }
     return result.length;
-    
 }
