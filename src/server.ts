@@ -10,6 +10,7 @@ import cors from "cors";
 import helmet from "helmet";
 import { Server, WebSocketServer } from "ws";
 import queryString from "query-string";
+import client from "./db/redis-client.js";
 // Initialize dotenv to load environment variables from .env file
 dotenv.config();
 const app: Application = express();
@@ -41,13 +42,10 @@ function errorHandler(
   // res.status(500).json({ error: err });
 }
 
-
 const wss = new WebSocketServer({
   noServer: true, // Server is attached to express instance!
   path: "/websockets",
 });
-
-
 
 wss.on(
   "connection",
@@ -80,8 +78,9 @@ wss.on(
   },
 );
 
-const expressServer = app.listen(PORT, () => {
+const expressServer = app.listen(PORT, async () => {
   console.log(`Server listening on port ${PORT}`);
+  console.log("Redis DB Livekit Version" + await client.get("livekit_version"));
 });
 
 expressServer.on("upgrade", (request, socket, head) => {

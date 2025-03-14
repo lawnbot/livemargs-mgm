@@ -26,7 +26,7 @@
     "@types/query-string": "^6.2.0",
     "@types/redis": "^4.0.10",
     "@types/ws": "^8.5.14",
-    "typescript": "^5.7.2"
+    "typescript": "^5.8.2"
   },
   "dependencies": {
     "@langchain/community": "^0.3.16",
