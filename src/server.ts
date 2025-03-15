@@ -9,11 +9,17 @@ import { routes } from "./routes/index.js";
 import cors from "cors";
 import helmet from "helmet";
 import { Server, WebSocketServer } from "ws";
+import jwt, { JwtPayload } from "jsonwebtoken";
 import client from "./db/redis-client.js";
+import { User } from "./models/user.js";
+import { setCustomerHeartbeat, setModeratorHeartbeat } from "./controllers/livekit.js";
+
 // Initialize dotenv to load environment variables from .env file
 dotenv.config();
 const app: Application = express();
 const PORT = process.env.PORT || 3000;
+const portWS: string = process.env.PORT_WS ?? "3001";
+const PORT_WS = parseInt(portWS);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
@@ -44,6 +50,7 @@ function errorHandler(
 const wss = new WebSocketServer({
   noServer: true, // Server is attached to express instance!
   path: "/websockets",
+  port: PORT_WS,
 });
 
 wss.on(
@@ -55,8 +62,77 @@ wss.on(
     // NOTE: connectParams are not used here but good to understand how to get
     // to them if you need to pass data with the connection to identify it (e.g., a userId).
     //console.log(connectionParams);
+    console.log(`Websocket connection on port ${PORT_WS}`);
+    websocketConnection.on("message", async (message) =>  {
+      const { command, user, data } = JSON.parse(message.toString()) as {
+        command: string;
+        user: User;
+        data: Object;
+      };
 
-    websocketConnection.on("message", (message) => {
+      // Moderator actions
+      if (command === "set-moderator-heartbeat") {
+        await setModeratorHeartbeat(user.email);
+        websocketConnection.send(
+          JSON.stringify({
+            fbStatus: 200,
+            message: "Moderator heartbeat set.",
+          }),
+        );
+      }
+      if (command === "protected-moderator-route") {
+        if (user.moderatorToken === "") {
+          websocketConnection.send(
+            JSON.stringify({
+              fbStatus: 403,
+              message: "Missing moderator token.",
+            }),
+          );
+        }
+        let blockAccess: boolean = false;
+        let jwtPayloadEmail: string = "";
+        jwt.verify(
+          user.moderatorToken,
+          process.env.JWT_SECRET!,
+          (err, email) => {
+            if (err) {
+              blockAccess = true;
+            }
+            jwtPayloadEmail = email as string;
+            //  next();
+          },
+        );
+        if(blockAccess){
+          websocketConnection.send(
+            JSON.stringify({
+              fbStatus: 403,
+              message: "Missing moderator token.",
+            }),
+          );
+        }
+        websocketConnection.send(
+          JSON.stringify({
+            fbStatus: 403,
+            message: "Access allowed.",
+          }),
+        );
+      }
+      // End-user & Dealer actions
+      switch (command) {
+        case "get-customer-room-or-queue-up":
+
+          break;
+        
+        case "set-customer-still-waiting-to-create-room-heartbeat":
+          await setCustomerHeartbeat(user.uuid);
+          websocketConnection.send(
+            JSON.stringify({
+              fbStatus: 200,
+              message: "Customer heartbeat set.",
+            }),
+          );
+          break;
+      }
       /*             const { command, user } = JSON.parse(message.toString()) as {
                 command: string;
                 user: User;
@@ -64,22 +140,18 @@ wss.on(
             if (command === "join") {
                 const position = addUser(user);
             }
-            if (command === "moderator-availability-tick") {
-                //client.set()
-            } */
+            */
 
-      websocketConnection.send(
-        JSON.stringify({
-          message: "There be gold in them thar hills.",
-        }),
-      );
+      
     });
   },
 );
 
 const expressServer = app.listen(PORT, async () => {
   console.log(`Server listening on port ${PORT}`);
-  console.log("Redis DB Livekit Version " + await client.get("livekit_version"));
+  console.log(
+    "Redis DB Livekit Version " + await client.get("livekit_version"),
+  );
 });
 
 expressServer.on("upgrade", (request, socket, head) => {

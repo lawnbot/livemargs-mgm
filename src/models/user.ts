@@ -4,6 +4,7 @@ export interface User {
     email: string;
     userType: UserType;
     status: UserStatus;
+    moderatorToken: string;
 }
 
 enum UserType {
@@ -15,3 +16,6 @@ enum UserStatus {
     available,
     offline,
 }
+
+// Create PIN and save it in redis to allow to open the room with a different device
+//Check mail + PIN for cross device joining

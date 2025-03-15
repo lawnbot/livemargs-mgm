@@ -3,6 +3,7 @@ import { AccessToken } from "livekit-server-sdk";
 import { CreateOptions, Room, RoomServiceClient } from "livekit-server-sdk";
 import { wss } from "../server.js";
 import { User } from "../models/user.js";
+import { Department, RoomChannel, RoomDetails } from "../models/RoomDetails.js";
 import {
     addUser,
     getNextUser,
@@ -21,39 +22,51 @@ const roomService = new RoomServiceClient(
 
 /*
 
-Channel: end-user & dealer, pure internal (for live meetings)
-Area: Sales, CustService
-Department: Robotics, OPE
-Limits:
- - Max. 3 pure AI chat rooms
- - Max. 1 Sales chat room
+Channel: end-user & dealer, pure internal (for live meetings
+By channel class with
 
-Process desc
+Product Category: Robotics, OPE
+Department: Sales, CustService
 
-Moderator decides when to end-users a room is
+Limit of rooms is defined by number of available moderators.
+
+Process desccription
+
+Room management
+
 Idea 1
-End-user select AI help or personal help
-Add option to askfor personal help later
+End-user selects firstly AI help or personal help
+Add an option to ask for personal help later
+Once clicked on personal help the user is in the queue.
 
 Idea 2
+MUST HAVE FEATURES
+- Cross device joining. Multiple devices of the same user. Therefor create a Code of 5 digits. More secure with email.
 
-If no moderators are available.
-Show Personal service is not available with regular office times
-Personal service times mean Last Activitiy of any logged in moderator is max 10 minutes old.
+Description of process
+Dealer & End-user Room is directly created if no limits are exceeded. Otherwise user needs to wait until rooms are available again.
 
-End-user goes in AI chatroom automatically if available max 3. Ask personal help if needed.
+End-user goes in AI chatroom automatically no limits are exceeded. Show Buttons "Try AI" or "Ask personal help" if needed.
 If personal help requested Show "Wir haben einen Platz bereits für Sie reserviert. Helfen Sie uns das Thema festzulegen, dass der richtige Kollge sich mit Ihnen verbindet."
 Area and department is determined.
+
+If no moderators are available.
+show directly personal service is not available with regular office times.
+Personal service times mean Last Activitiy of any logged in moderator is max 10 minutes old.
+
 
 Can play in room as long as he wants with AI.
 If personal help is asked own position is determined and Number on waiting list is showed.
 
 If no moderators are available. Show Personal service is not available
 
-Moderator see the chaat room list and names which are available
+Moderator see the chat room list and names which are available
+He sees the order in the room list (with personal help required ) and decides independently of the waiting list which room he joins next
+to fulfill urgent cases.
 
 If Moderator not joined he sees which room ask for personal help.
 In praxis room is always created.
+
 
 Challenges: determine number of available moderators. Keep Wss connection. Send all 10 seconds a presence sign of a moderator.
 Get notified once a room is left. Idea: Moderator leaves the room and releases with that a place in a personal chatroom.
@@ -67,15 +80,18 @@ WSS for
   If not available show regular service times of our office
  Automatic status update of the qeue.
 
+Implementation
+User is identified in a device with a uuid
+
 */
 
-export const createStandardToken = async (req: Request, res: Response) => {
+/* export const createStandardToken = async (req: Request, res: Response) => {
     const token: string = await createTokenForRoomAndParticipant(
         "quickstart-room",
         "quickstart-username",
     );
-    res.send(token);
-};
+    res.json(token);
+}; */
 
 export const getParticipantDetail = async (req: Request, res: Response) => {
     req.body;
@@ -84,24 +100,40 @@ export const getParticipantDetail = async (req: Request, res: Response) => {
     //res.send(participant.toJsonString);
 };
 
-const getRooms = async () => {
-    const rooms: Room[] = await roomService.listRooms();
+const getRooms = async (): Promise<Room[]> => {
+    return await roomService.listRooms();
 };
 
-const createRoom = async () => {
+const createCustomerRoom = async (
+    roomChannel: RoomChannel | undefined,
+    department: Department | undefined,
+    productCategory: string,
+): Promise<Room> => {
+    const currentTime = new Date().toLocaleTimeString();
     // create a new room
+    const roomDetails = new RoomDetails(
+        roomChannel,
+        department,
+        productCategory,
+    );
+
     const opts: CreateOptions = {
-        name: "myroom",
+        name: "CustRoom:" + currentTime.toString(),
         // timeout in seconds
+        departureTimeout: 60,
         emptyTimeout: 10 * 60,
         maxParticipants: 20,
-        metadata: "",
+        metadata: JSON.stringify(roomDetails),
     };
-    await roomService.createRoom(opts);
+
+    return await roomService.createRoom(opts);
 };
-const createTokenForRoomAndParticipant = async (
-    roomName: string,
+
+const createTokenForCustomerRoomAndParticipant = async (
     participantName: string,
+    roomChannel: RoomChannel | undefined,
+    department: Department | undefined,
+    productCategory: string,
 ) => {
     // If this room doesn't exist, it'll be automatically created when the first
     // participant joins
@@ -109,19 +141,27 @@ const createTokenForRoomAndParticipant = async (
     // // Identifier to be used for participant.
     // // It's available as LocalParticipant.identity with livekit-client SDK
     // const participantName = 'quickstart-username';
+    try {
+        const createdRoom = await createCustomerRoom(
+            roomChannel,
+            department,
+            productCategory,
+        );
+        const at = new AccessToken(
+            process.env.LIVEKIT_API_KEY,
+            process.env.LIVEKIT_API_SECRET,
+            {
+                identity: participantName,
 
-    const at = new AccessToken(
-        process.env.LIVEKIT_API_KEY,
-        process.env.LIVEKIT_API_SECRET,
-        {
-            identity: participantName,
-            // Token to expire after 10 minutes
-            ttl: "10m",
-        },
-    );
-    at.addGrant({ roomJoin: true, room: roomName });
+                // Token to expire after 10 minutes
+                ttl: "10m",
+            },
+        );
+        at.addGrant({ roomJoin: true, room: createdRoom.name });
 
-    return await at.toJwt();
+        return await at.toJwt();
+    } catch (e) {
+    }
 };
 
 //websocketServer.clients.forEach()
@@ -140,17 +180,6 @@ function broadcastQueuePositions() {
         }
     });
 }
-function broadcastAvailabilityOfModerators() {
-    wss.clients.forEach((client) => {
-        if (client.readyState === client.OPEN) {
-            client.send(
-                JSON.stringify({
-                    type: "moderator-is-available-update",
-                }),
-            );
-        }
-    });
-}
 
 const broadcastTime = () => {
     const currentTime = new Date().toLocaleTimeString();
@@ -161,7 +190,20 @@ const broadcastTime = () => {
     });
 };
 
-setInterval(broadcastTime, 3000);
+const broadcastActiveModerators = () => {
+    wss.clients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({
+                fbStatus: 200,
+                fbType: "activeModerators",
+                value: getActiveModerators(),
+            }));
+        }
+    });
+};
+
+//setInterval(broadcastTime, 3000);
+setInterval(broadcastActiveModerators, 10000); // All 10 seconds
 
 //meetingRoomAvailable &&
 function checkQueue() {
@@ -176,11 +218,15 @@ function checkQueue() {
         }, 5000);
     }
 }
-async function setModeratorHeartbeat(email: string) {
+export async function setModeratorHeartbeat(email: string) {
     client.set(`moderator:heartbeat:${email}`, Date.now(), { EX: 600 }); // 10 minutes
 }
 
-async function getActiveModerators(email: string): Promise<number> {
+export async function setCustomerHeartbeat(uuid: string) {
+    client.set(`customer:heartbeat:${uuid}`, Date.now(), { EX: 300 }); // 5 minutes
+}
+
+async function getActiveModerators(): Promise<number> {
     let result: string[] = [];
     for await (
         const key of client.scanIterator({
