@@ -1,5 +1,9 @@
 import { Request, Response } from "express";
-import { AccessToken } from "livekit-server-sdk";
+import {
+    AccessToken,
+    ParticipantInfo,
+    ParticipantPermission,
+} from "livekit-server-sdk";
 import { CreateOptions, Room, RoomServiceClient } from "livekit-server-sdk";
 import { wss } from "../server.js";
 import { User } from "../models/user.js";
@@ -85,19 +89,51 @@ User is identified in a device with a uuid
 
 */
 
-/* export const createStandardToken = async (req: Request, res: Response) => {
-    const token: string = await createTokenForRoomAndParticipant(
-        "quickstart-room",
-        "quickstart-username",
-    );
-    res.json(token);
-}; */
-
 export const getParticipantDetail = async (req: Request, res: Response) => {
     req.body;
     //const participant = await roomService.getParticipant(roomName, identity);
 
     //res.send(participant.toJsonString);
+};
+
+export const updateParticipant = async (
+    room: string,
+    identity: string,
+    metadata?: string,
+    permission?: Partial<ParticipantPermission>,
+    name?: string,
+): Promise<ParticipantInfo> => {
+    return await roomService.updateParticipant(
+        room,
+        identity,
+        metadata,
+        permission,
+        name,
+    );
+};
+
+export const listRoomParticipants = async (
+    roomName: string,
+): Promise<ParticipantInfo[]> => {
+    return await roomService.listParticipants(roomName);
+};
+
+export const getParticipantInfo = async (
+    roomName: string,
+    identity: string,
+): Promise<ParticipantInfo> => {
+    return await roomService.getParticipant(roomName, identity);
+};
+
+export const getAllRooms = async (): Promise<Room[]> => {
+    return await roomService.listRooms();
+};
+
+export const updateRoomMetadata = async (
+    room: string,
+    metadata: string,
+): Promise<Room> => {
+    return await roomService.updateRoomMetadata(room, metadata);
 };
 
 export const getCustomerRooms = async (): Promise<Room[]> => {
@@ -122,11 +158,33 @@ export const createCustomerRoom = async (
     );
 
     const opts: CreateOptions = {
-        name: "CustRoom:" + currentTime.toString(),
+        name: "CustRoom:" + currentTime,
         // timeout in seconds
-        departureTimeout: 60,
-        emptyTimeout: 10 * 60,
-        maxParticipants: 20,
+        departureTimeout: 30,
+        //emptyTimeout: 10 * 60,
+        maxParticipants: 10,
+        metadata: JSON.stringify(roomDetails),
+    };
+
+    return await roomService.createRoom(opts);
+};
+
+export const createInternalRoom = async (
+    department: Department | undefined,
+): Promise<Room> => {
+    const currentTime = new Date().toLocaleTimeString();
+    // create a new room
+    const roomDetails = new RoomDetails(
+        RoomChannel.Internal,
+        department,
+        "",
+    );
+
+    const opts: CreateOptions = {
+        name: "InternalRoom:" + currentTime,
+        // timeout in seconds
+        departureTimeout: 5 * 60,
+        maxParticipants: 50,
         metadata: JSON.stringify(roomDetails),
     };
 
@@ -161,7 +219,12 @@ export const createTokenForCustomerRoomAndParticipant = async (
                 ttl: "10m",
             },
         );
-        at.addGrant({ roomJoin: true, room: createdRoom.name });
+        at.addGrant({
+            roomJoin: true,
+            room: createdRoom.name,
+            roomList: true,
+            roomRecord: false,
+        });
 
         return await at.toJwt();
     } catch (e) {
@@ -207,8 +270,7 @@ const broadcastActiveModerators = async () => {
     });
 };
 
-//setInterval(broadcastTime, 3000);
-//setInterval(broadcastActiveModerators, 10000); // All 10 seconds
+// working
 const interval1 = setInterval(() => {
     broadcastActiveModerators();
 }, 10000);

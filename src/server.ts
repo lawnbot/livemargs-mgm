@@ -16,7 +16,9 @@ import { redisPublisher, redisSubscriber } from "./db/redisPubSub.js";
 import { User } from "./models/user.js";
 import {
   createCustomerRoom,
+  createInternalRoom,
   createTokenForCustomerRoomAndParticipant,
+  getAllRooms,
   getCustomerRooms,
   setCustomerHeartbeat,
   setModeratorHeartbeat,
@@ -28,7 +30,7 @@ dotenv.config();
 const app: Application = express();
 const server = createServer(app);
 const wss = new WebSocketServer({
-  noServer: true, // Server is attached to express instance! 
+  noServer: true, // Server is attached to express instance!
 });
 
 const PORT = process.env.PORT || 3000;
@@ -82,48 +84,75 @@ wss.on(
         );
       }
       if (command === "protected-moderator-route") {
-        if (user.moderatorToken === "") {
-          ws.send(
-            JSON.stringify({
-              fbStatus: 403,
-              message: "Missing moderator token.",
-            }),
-          );
-        }
-        let blockAccess: boolean = false;
-        let jwtPayloadEmail: string = "";
-        jwt.verify(
-          user.moderatorToken,
-          process.env.JWT_SECRET!,
-          (err, email) => {
-            if (err) {
-              blockAccess = true;
-            }
-            jwtPayloadEmail = email as string;
-            //  next();
-          },
-        );
+        const [blockAccess, jwtEmail] = getModeartorTokenPermission(user);
+
         if (blockAccess) {
           ws.send(
             JSON.stringify({
               fbStatus: 403,
-              message: "Missing moderator token.",
+              message: "Moderator token missing or wrong.",
+            }),
+          );
+        } else {
+          ws.send(
+            JSON.stringify({
+              fbStatus: 200,
+              fbCommand: "allowed",
+              message: "Access allowed.",
             }),
           );
         }
-        ws.send(
-          JSON.stringify({
-            fbStatus: 403,
-            message: "Access allowed.",
-          }),
-        );
       }
+      if (command === "protected-moderator-create-internal-room") {
+        const [blockAccess, jwtEmail] = getModeartorTokenPermission(user);
+
+        if (!blockAccess) {
+          const room = await createInternalRoom(undefined);
+          ws.send(
+            JSON.stringify({
+              fbStatus: 200,
+              fbCommand: "roomCreated",
+              fbMessage: "Room created.",
+              fbData: JSON.stringify(room),
+            }),
+          );
+        } else {
+          ws.send(
+            JSON.stringify({
+              fbStatus: 403,
+              message: "Moderator token missing or wrong.",
+            }),
+          );
+        }
+      }
+      if (command === "protected-moderator-get-all-rooms") {
+        const [blockAccess, jwtEmail] = getModeartorTokenPermission(user);
+
+        if (!blockAccess) {
+          const rooms = await getAllRooms();
+          ws.send(
+            JSON.stringify({
+              fbStatus: 200,
+              fbCommand: "roomsList",
+              fbMessage: "Retrieved all rooms.",
+              fbData: JSON.stringify(rooms),
+            }),
+          );
+        } else {
+          ws.send(
+            JSON.stringify({
+              fbStatus: 403,
+              message: "Moderator token missing or wrong.",
+            }),
+          );
+        }
+      }
+      
       // End-user & Dealer actions
       switch (command) {
         case "get-customer-room-or-queue-up":
-    
           let numOfCustRooms = (await getCustomerRooms()).length;
-          
+
           if (numOfCustRooms > 10) {
             // Queued up
             ws.send(
@@ -147,6 +176,7 @@ wss.on(
             ws.send(
               JSON.stringify({
                 fbStatus: 200,
+                fbCommand: "roomTokenCreated",
                 fbMessage: at,
               }),
             );
@@ -233,7 +263,6 @@ function errorHandler(
   // res.status(500).json({ error: err });
 }
 
-
 const expressServer = server.listen(PORT, async () => {
   console.log(`Server listening on port ${PORT}`);
   console.log(
@@ -242,3 +271,24 @@ const expressServer = server.listen(PORT, async () => {
 });
 
 export { wss };
+
+const getModeartorTokenPermission = (
+  user: User,
+): [boolean, string?] => {
+  let blockAccess: boolean = false;
+  let jwtPayloadEmail: string = "";
+  if (user.moderatorToken === "") {
+    blockAccess = true;
+  }
+  jwt.verify(
+    user.moderatorToken,
+    process.env.JWT_SECRET!,
+    (err, email) => {
+      if (err) {
+        blockAccess = true;
+      }
+      jwtPayloadEmail = email as string;
+    },
+  );
+  return [blockAccess, jwtPayloadEmail];
+};
