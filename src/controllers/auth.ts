@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response } from "express";
 import jwt, { JwtPayload } from "jsonwebtoken";
-import client from "../db/redis-client.js";
+import client from "../db/redisClient.js";
 import {
     Error401Unauthorized,
     Error403Forbidden,

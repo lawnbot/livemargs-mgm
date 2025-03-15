@@ -1,4 +1,5 @@
-import { AccessToken } from "livekit-server-sdk";
+import { createServer } from "http";
+import { v4 as uuidv4 } from "uuid";
 import dotenv from "dotenv";
 import express, { Application, NextFunction, Request, Response } from "express";
 import {
@@ -10,16 +11,201 @@ import cors from "cors";
 import helmet from "helmet";
 import { Server, WebSocketServer } from "ws";
 import jwt, { JwtPayload } from "jsonwebtoken";
-import client from "./db/redis-client.js";
+import client from "./db/redisClient.js";
+import { redisPublisher, redisSubscriber } from "./db/redisPubSub.js";
 import { User } from "./models/user.js";
-import { setCustomerHeartbeat, setModeratorHeartbeat } from "./controllers/livekit.js";
+import {
+  createCustomerRoom,
+  createTokenForCustomerRoomAndParticipant,
+  getCustomerRooms,
+  setCustomerHeartbeat,
+  setModeratorHeartbeat,
+} from "./controllers/livekit.js";
+import { RoomDetails } from "./models/RoomDetails.js";
 
 // Initialize dotenv to load environment variables from .env file
 dotenv.config();
 const app: Application = express();
+const server = createServer(app);
+const wss = new WebSocketServer({
+  noServer: true, // Server is attached to express instance! 
+});
+
 const PORT = process.env.PORT || 3000;
 const portWS: string = process.env.PORT_WS ?? "3001";
 const PORT_WS = parseInt(portWS);
+
+wss.on(
+  "connection",
+  function connection(ws, connectionRequest) {
+    // Generate a unique client ID for each ws instance
+    const wsClientId = uuidv4();
+    console.log("new ws conncetion");
+
+    //Directly Subscribe to a unique Redis channel for this client
+    redisSubscriber.subscribe(wsClientId, (message) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(message); // Once Publish takes place it sends the message directly to the WebSocket client
+      }
+    });
+
+    //const [_path, params] = connectionRequest?.url?.split("?");
+    //const connectionParams = queryString.parse(params);
+
+    // NOTE: connectParams are not used here but good to understand how to get
+    // to them if you need to pass data with the connection to identify it (e.g., a userId).
+    //console.log(connectionParams);
+    console.log(`Websocket connection on port ${PORT}`);
+    ws.on("message", async (message) => {
+      const { command, user, messageData } = JSON.parse(message.toString()) as {
+        command: string;
+        user: User;
+        messageData: Object;
+      };
+      if (command == "test") {
+        ws.send(
+          JSON.stringify({
+            fbStatus: 200,
+            fbMessage: "Test succcessful.",
+          }),
+        );
+      }
+
+      // Moderator actions
+      if (command === "set-moderator-heartbeat") {
+        await setModeratorHeartbeat(user.email);
+        ws.send(
+          JSON.stringify({
+            fbStatus: 200,
+            message: "Moderator heartbeat set.",
+          }),
+        );
+      }
+      if (command === "protected-moderator-route") {
+        if (user.moderatorToken === "") {
+          ws.send(
+            JSON.stringify({
+              fbStatus: 403,
+              message: "Missing moderator token.",
+            }),
+          );
+        }
+        let blockAccess: boolean = false;
+        let jwtPayloadEmail: string = "";
+        jwt.verify(
+          user.moderatorToken,
+          process.env.JWT_SECRET!,
+          (err, email) => {
+            if (err) {
+              blockAccess = true;
+            }
+            jwtPayloadEmail = email as string;
+            //  next();
+          },
+        );
+        if (blockAccess) {
+          ws.send(
+            JSON.stringify({
+              fbStatus: 403,
+              message: "Missing moderator token.",
+            }),
+          );
+        }
+        ws.send(
+          JSON.stringify({
+            fbStatus: 403,
+            message: "Access allowed.",
+          }),
+        );
+      }
+      // End-user & Dealer actions
+      switch (command) {
+        case "get-customer-room-or-queue-up":
+    
+          let numOfCustRooms = (await getCustomerRooms()).length;
+          
+          if (numOfCustRooms > 10) {
+            // Queued up
+            ws.send(
+              JSON.stringify({
+                fbStatus: 400,
+                fbCommand: "queued",
+                fbMessage:
+                  "No customer rooms are available. Wait for a room to become free.", // Implement re-requesting in app side.
+              }),
+            );
+          } else {
+            const roomDetails = messageData as RoomDetails;
+            console.log(roomDetails);
+
+            const at = await createTokenForCustomerRoomAndParticipant(
+              user.name,
+              roomDetails.channel,
+              roomDetails.department,
+              roomDetails.productCategory,
+            );
+            ws.send(
+              JSON.stringify({
+                fbStatus: 200,
+                fbMessage: at,
+              }),
+            );
+          }
+
+          break;
+
+        case "set-customer-still-waiting-to-create-room-heartbeat":
+          await setCustomerHeartbeat(user.uuid);
+          ws.send(
+            JSON.stringify({
+              fbStatus: 200,
+              fbMessage: "Customer heartbeat set.",
+            }),
+          );
+          break;
+      }
+      /*             const { command, user } = JSON.parse(message.toString()) as {
+                command: string;
+                user: User;
+            };
+            if (command === "join") {
+                const position = addUser(user);
+            }
+            */
+    });
+    // Handle connection close
+    ws.on("close", async () => {
+      console.log(`Connection closed: ${wsClientId}`);
+
+      // Unsubscribe from the client's Redis channel
+      await redisSubscriber.unsubscribe(wsClientId);
+    });
+  },
+);
+
+// Subscribe to group channels to broadcast messages
+redisSubscriber.subscribe("all-group", (message) => {
+  // Broadcast message to all connected WebSocket clients
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      // Broadcast to all-group
+      client.send(message);
+    }
+  });
+});
+// Use
+// redisPublisher.publish(clientId, 'Hello, specific client!');
+// redisPublisher.publish('all-group', 'Hello, group members!');
+
+server.on("upgrade", (request, socket, head) => {
+  if (request.url === "/ws") {
+    wss.handleUpgrade(request, socket, head, (websocket) => {
+      wss.emit("connection", websocket, request);
+    });
+  } else {
+    socket.destroy();
+  }
+});
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
@@ -47,117 +233,12 @@ function errorHandler(
   // res.status(500).json({ error: err });
 }
 
-const wss = new WebSocketServer({
-  noServer: true, // Server is attached to express instance!
-  path: "/websockets",
-  port: PORT_WS,
-});
 
-wss.on(
-  "connection",
-  function connection(websocketConnection, connectionRequest) {
-    //const [_path, params] = connectionRequest?.url?.split("?");
-    //const connectionParams = queryString.parse(params);
-
-    // NOTE: connectParams are not used here but good to understand how to get
-    // to them if you need to pass data with the connection to identify it (e.g., a userId).
-    //console.log(connectionParams);
-    console.log(`Websocket connection on port ${PORT_WS}`);
-    websocketConnection.on("message", async (message) =>  {
-      const { command, user, data } = JSON.parse(message.toString()) as {
-        command: string;
-        user: User;
-        data: Object;
-      };
-
-      // Moderator actions
-      if (command === "set-moderator-heartbeat") {
-        await setModeratorHeartbeat(user.email);
-        websocketConnection.send(
-          JSON.stringify({
-            fbStatus: 200,
-            message: "Moderator heartbeat set.",
-          }),
-        );
-      }
-      if (command === "protected-moderator-route") {
-        if (user.moderatorToken === "") {
-          websocketConnection.send(
-            JSON.stringify({
-              fbStatus: 403,
-              message: "Missing moderator token.",
-            }),
-          );
-        }
-        let blockAccess: boolean = false;
-        let jwtPayloadEmail: string = "";
-        jwt.verify(
-          user.moderatorToken,
-          process.env.JWT_SECRET!,
-          (err, email) => {
-            if (err) {
-              blockAccess = true;
-            }
-            jwtPayloadEmail = email as string;
-            //  next();
-          },
-        );
-        if(blockAccess){
-          websocketConnection.send(
-            JSON.stringify({
-              fbStatus: 403,
-              message: "Missing moderator token.",
-            }),
-          );
-        }
-        websocketConnection.send(
-          JSON.stringify({
-            fbStatus: 403,
-            message: "Access allowed.",
-          }),
-        );
-      }
-      // End-user & Dealer actions
-      switch (command) {
-        case "get-customer-room-or-queue-up":
-
-          break;
-        
-        case "set-customer-still-waiting-to-create-room-heartbeat":
-          await setCustomerHeartbeat(user.uuid);
-          websocketConnection.send(
-            JSON.stringify({
-              fbStatus: 200,
-              message: "Customer heartbeat set.",
-            }),
-          );
-          break;
-      }
-      /*             const { command, user } = JSON.parse(message.toString()) as {
-                command: string;
-                user: User;
-            };
-            if (command === "join") {
-                const position = addUser(user);
-            }
-            */
-
-      
-    });
-  },
-);
-
-const expressServer = app.listen(PORT, async () => {
+const expressServer = server.listen(PORT, async () => {
   console.log(`Server listening on port ${PORT}`);
   console.log(
     "Redis DB Livekit Version " + await client.get("livekit_version"),
   );
-});
-
-expressServer.on("upgrade", (request, socket, head) => {
-  wss.handleUpgrade(request, socket, head, (websocket) => {
-    wss.emit("connection", websocket, request);
-  });
 });
 
 export { wss };

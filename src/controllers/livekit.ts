@@ -11,7 +11,7 @@ import {
     removeUser,
     waitingQueue,
 } from "../models/user-queue.js";
-import client from "../db/redis-client.js";
+import client from "../db/redisClient.js";
 
 const livekitHost = process.env.LIVEKIT_HOST ?? "";
 const roomService = new RoomServiceClient(
@@ -100,11 +100,15 @@ export const getParticipantDetail = async (req: Request, res: Response) => {
     //res.send(participant.toJsonString);
 };
 
-const getRooms = async (): Promise<Room[]> => {
-    return await roomService.listRooms();
+export const getCustomerRooms = async (): Promise<Room[]> => {
+    const rooms = await roomService.listRooms();
+    return rooms.filter((el) => {
+        const rd = JSON.parse(el.metadata) as RoomDetails;
+        return rd.channel == RoomChannel.Customer;
+    });
 };
 
-const createCustomerRoom = async (
+export const createCustomerRoom = async (
     roomChannel: RoomChannel | undefined,
     department: Department | undefined,
     productCategory: string,
@@ -129,12 +133,12 @@ const createCustomerRoom = async (
     return await roomService.createRoom(opts);
 };
 
-const createTokenForCustomerRoomAndParticipant = async (
+export const createTokenForCustomerRoomAndParticipant = async (
     participantName: string,
     roomChannel: RoomChannel | undefined,
     department: Department | undefined,
     productCategory: string,
-) => {
+): Promise<string> => {
     // If this room doesn't exist, it'll be automatically created when the first
     // participant joins
     // const roomName = 'quickstart-room';
@@ -161,6 +165,7 @@ const createTokenForCustomerRoomAndParticipant = async (
 
         return await at.toJwt();
     } catch (e) {
+        return "";
     }
 };
 
@@ -190,20 +195,23 @@ const broadcastTime = () => {
     });
 };
 
-const broadcastActiveModerators = () => {
-    wss.clients.forEach((client) => {
+const broadcastActiveModerators = async () => {
+    wss.clients.forEach(async (client) => {
         if (client.readyState === WebSocket.OPEN) {
             client.send(JSON.stringify({
                 fbStatus: 200,
                 fbType: "activeModerators",
-                value: getActiveModerators(),
+                value: await getActiveModerators(),
             }));
         }
     });
 };
 
 //setInterval(broadcastTime, 3000);
-setInterval(broadcastActiveModerators, 10000); // All 10 seconds
+//setInterval(broadcastActiveModerators, 10000); // All 10 seconds
+const interval1 = setInterval(() => {
+    broadcastActiveModerators();
+}, 10000);
 
 //meetingRoomAvailable &&
 function checkQueue() {
