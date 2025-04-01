@@ -86,7 +86,7 @@ export const verifyPIN = async (req: Request, res: Response) => {
 
         res.json({ accessToken, refreshToken });
     } else {
-        res.status(401).send("Invalid or expired PIN.");
+        res.status(401).json({ "error": "Invalid or expired PIN." }); //.send("Invalid or expired PIN.");
     }
 };
 

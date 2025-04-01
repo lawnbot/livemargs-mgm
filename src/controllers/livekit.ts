@@ -216,7 +216,8 @@ export const createTokenForCustomerRoomAndParticipant = async (
                 identity: participantName,
 
                 // Token to expire after 10 minutes
-                ttl: "10m",
+                //ttl: "10m",
+                ttl: process.env.LIVEKIT_ACCESS_TOKEN_LIFETIME,
             },
         );
         at.addGrant({
@@ -224,6 +225,8 @@ export const createTokenForCustomerRoomAndParticipant = async (
             room: createdRoom.name,
             roomList: true,
             roomRecord: false,
+            canPublish: true,
+            canSubscribe: true,
         });
 
         return await at.toJwt();
