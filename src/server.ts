@@ -24,6 +24,7 @@ import {
   setModeratorHeartbeat,
 } from "./controllers/livekit.js";
 import { RoomDetails } from "./models/RoomDetails.js";
+import { FbStatus, FbType, WSFeedback } from "./models/ws-feedback.js";
 
 // Initialize dotenv to load environment variables from .env file
 dotenv.config();
@@ -65,42 +66,56 @@ wss.on(
         messageData: Object;
       };
       if (command == "test") {
-        ws.send(
-          JSON.stringify({
-            fbStatus: 200,
-            fbMessage: "Test succcessful.",
-          }),
-        );
+        const wsFb: WSFeedback = {
+          fbStatus: FbStatus.Okay,
+          originalCommand: "test",
+          fbType: "test",
+          fbMessage: "Test succcessful.",
+        };
+
+        ws.send(JSON.stringify(wsFb));
       }
 
       // Moderator actions
       if (command === "set-moderator-heartbeat") {
         await setModeratorHeartbeat(user.email);
-        ws.send(
-          JSON.stringify({
-            fbStatus: 200,
-            message: "Moderator heartbeat set.",
-          }),
-        );
+        const wsFb: WSFeedback = {
+          fbStatus: FbStatus.Okay,
+          originalCommand: "set-moderator-heartbeat",
+          fbType: "moderatorHeartbeatSet",
+          fbMessage: "Moderator heartbeat set.",
+        };
+
+        ws.send(JSON.stringify(wsFb));
       }
       if (command === "protected-moderator-route") {
         const [blockAccess, jwtEmail] = getModeartorTokenPermission(user);
 
         if (blockAccess) {
-          ws.send(
-            JSON.stringify({
-              fbStatus: 403,
-              message: "Moderator token missing or wrong.",
-            }),
-          );
+          const wsFb: WSFeedback = {
+            fbStatus: FbStatus.Unauthorized,
+            originalCommand: "protected-moderator-route",
+            fbType: FbType.Error,
+            fbMessage: "Moderator token missing or wrong.",
+          };
+
+          ws.send(JSON.stringify(wsFb));
+
+          // ws.send(
+          //   JSON.stringify({
+          //     fbStatus: 403,
+          //     message: "Moderator token missing or wrong.",
+          //   }),
+          // );
         } else {
-          ws.send(
-            JSON.stringify({
-              fbStatus: 200,
-              fbCommand: "allowed",
-              message: "Access allowed.",
-            }),
-          );
+          const wsFb: WSFeedback = {
+            fbStatus: FbStatus.Okay,
+            originalCommand: "protected-moderator-route",
+            fbType: FbType.MessageResponse,
+            fbMessage: "Access allowed.",
+          };
+
+          ws.send(JSON.stringify(wsFb));
         }
       }
       if (command === "protected-moderator-create-internal-room") {
@@ -108,21 +123,33 @@ wss.on(
 
         if (!blockAccess) {
           const room = await createInternalRoom(undefined);
-          ws.send(
-            JSON.stringify({
-              fbStatus: 200,
-              fbCommand: "roomCreated",
-              fbMessage: "Room created.",
-              fbData: JSON.stringify(room),
-            }),
-          );
+          const wsFb: WSFeedback = {
+            fbStatus: FbStatus.Okay,
+            originalCommand: "protected-moderator-create-internal-room",
+            fbType: "createdRoom",
+            fbMessage: "Room created.",
+            fbData: JSON.stringify(room),
+          };
+
+          ws.send(JSON.stringify(wsFb));
+
+          // ws.send(
+          //   JSON.stringify({
+          //     fbStatus: 200,
+          //     fbCommand: "roomCreated",
+          //     fbMessage: "Room created.",
+          //     fbData: JSON.stringify(room),
+          //   }),
+          // );
         } else {
-          ws.send(
-            JSON.stringify({
-              fbStatus: 403,
-              message: "Moderator token missing or wrong.",
-            }),
-          );
+          const wsFb: WSFeedback = {
+            fbStatus: FbStatus.Unauthorized,
+            originalCommand: "protected-moderator-create-internal-room",
+            fbType: FbType.Error,
+            fbMessage: "Moderator token missing or wrong.",
+          };
+
+          ws.send(JSON.stringify(wsFb));
         }
       }
       if (command === "protected-moderator-get-all-rooms") {
@@ -130,24 +157,27 @@ wss.on(
 
         if (!blockAccess) {
           const rooms = await getAllRooms();
-          ws.send(
-            JSON.stringify({
-              fbStatus: 200,
-              fbCommand: "roomsList",
-              fbMessage: "Retrieved all rooms.",
-              fbData: JSON.stringify(rooms),
-            }),
-          );
+          const wsFb: WSFeedback = {
+            fbStatus: FbStatus.Okay,
+            originalCommand: "protected-moderator-get-all-rooms",
+            fbType: "roomsList",
+            fbMessage: "Retrieved all rooms.",
+            fbData: JSON.stringify(rooms),
+          };
+
+          ws.send(JSON.stringify(wsFb));
         } else {
-          ws.send(
-            JSON.stringify({
-              fbStatus: 403,
-              message: "Moderator token missing or wrong.",
-            }),
-          );
+          const wsFb: WSFeedback = {
+            fbStatus: FbStatus.Unauthorized,
+            originalCommand: "protected-moderator-get-all-rooms",
+            fbType: FbType.Error,
+            fbMessage: "Moderator token missing or wrong.",
+          };
+
+          ws.send(JSON.stringify(wsFb));
         }
       }
-      
+
       // End-user & Dealer actions
       switch (command) {
         case "get-customer-room-or-queue-up":
@@ -155,14 +185,23 @@ wss.on(
 
           if (numOfCustRooms > 10) {
             // Queued up
-            ws.send(
-              JSON.stringify({
-                fbStatus: 400,
-                fbCommand: "queued",
-                fbMessage:
-                  "No customer rooms are available. Wait for a room to become free.", // Implement re-requesting in app side.
-              }),
-            );
+
+            const wsFb: WSFeedback = {
+              fbStatus: FbStatus.Okay,
+              originalCommand: "get-customer-room-or-queue-up",
+              fbType: "queuedUpAtRequestingNewCustomerRoom",
+              fbMessage:
+                "No customer rooms are available. Wait for a room to become free.",
+            };
+            ws.send(JSON.stringify(wsFb));
+            // ws.send(
+            //   JSON.stringify({
+            //     fbStatus: 400,
+            //     fbCommand: "queued",
+            //     fbMessage:
+            //       "No customer rooms are available. Wait for a room to become free.", // Implement re-requesting in app side.
+            //   }),
+            // );
           } else {
             const roomDetails = messageData as RoomDetails;
             console.log(roomDetails);
@@ -173,25 +212,44 @@ wss.on(
               roomDetails.department,
               roomDetails.productCategory,
             );
-            ws.send(
-              JSON.stringify({
-                fbStatus: 200,
-                fbCommand: "roomTokenCreated",
-                fbMessage: at,
-              }),
-            );
+
+            const wsFb: WSFeedback = {
+              fbStatus: FbStatus.Okay,
+              originalCommand: "get-customer-room-or-queue-up",
+              fbType: "customerRoomTokenCreated",
+              fbMessage: "Created new room for customer.",
+              fbData: JSON.stringify(at),
+            };
+            ws.send(JSON.stringify(wsFb));
+
+            // ws.send(
+            //   JSON.stringify({
+            //     fbStatus: 200,
+            //     fbCommand: "customerRoomTokenCreated",
+            //     fbMessage: at,
+            //   }),
+            // );
           }
 
           break;
 
         case "set-customer-still-waiting-to-create-room-heartbeat":
           await setCustomerHeartbeat(user.uuid);
-          ws.send(
-            JSON.stringify({
-              fbStatus: 200,
-              fbMessage: "Customer heartbeat set.",
-            }),
-          );
+          // ws.send(
+          //   JSON.stringify({
+          //     fbStatus: 200,
+          //     fbMessage: "Customer heartbeat set.",
+          //   }),
+          // );
+
+          const wsFb: WSFeedback = {
+            fbStatus: FbStatus.Okay,
+            originalCommand:
+              "set-customer-still-waiting-to-create-room-heartbeat",
+            fbType: "customerHeartbeatSet",
+            fbMessage: "Customer heartbeat set.",
+          };
+          ws.send(JSON.stringify(wsFb));
           break;
       }
       /*             const { command, user } = JSON.parse(message.toString()) as {

@@ -7,6 +7,7 @@ import {
 import { CreateOptions, Room, RoomServiceClient } from "livekit-server-sdk";
 import { wss } from "../server.js";
 import { User } from "../models/user.js";
+import { FbStatus, WSFeedback } from "../models/ws-feedback.js";
 import { Department, RoomChannel, RoomDetails } from "../models/RoomDetails.js";
 import {
     addUser,
@@ -239,15 +240,20 @@ export const createTokenForCustomerRoomAndParticipant = async (
 function broadcastQueuePositions() {
     wss.clients.forEach((client) => {
         if (client.readyState === client.OPEN) {
-            client.send(
-                JSON.stringify({
+            const wsFb: WSFeedback = {
+                fbStatus: FbStatus.Okay,
+                originalCommand: "none",
+                fbType: "broadcastedQueuePositions",
+                fbData: JSON.stringify({
                     type: "update",
                     queue: waitingQueue.map((user) => ({
                         id: user.uuid,
                         position: getQueuePosition(user.uuid),
                     })),
                 }),
-            );
+            };
+
+            client.send(JSON.stringify(wsFb));
         }
     });
 }
@@ -264,11 +270,14 @@ const broadcastTime = () => {
 const broadcastActiveModerators = async () => {
     wss.clients.forEach(async (client) => {
         if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify({
-                fbStatus: 200,
+            const wsFb: WSFeedback = {
+                fbStatus: FbStatus.Okay,
+                originalCommand: "none",
                 fbType: "activeModerators",
-                value: await getActiveModerators(),
-            }));
+                fbNumberValue: await getActiveModerators(),
+            };
+
+            client.send(JSON.stringify(wsFb));
         }
     });
 };
