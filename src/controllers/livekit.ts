@@ -6,7 +6,7 @@ import {
 } from "livekit-server-sdk";
 import { CreateOptions, Room, RoomServiceClient } from "livekit-server-sdk";
 import { wss } from "../server.js";
-import { User } from "../models/user.js";
+import { User, UserType } from "../models/user.js";
 import { FbStatus, WSFeedback } from "../models/ws-feedback.js";
 import { Department, RoomChannel, RoomDetails } from "../models/RoomDetails.js";
 import {
@@ -193,7 +193,9 @@ export const createInternalRoom = async (
 };
 
 export const createTokenForCustomerRoomAndParticipant = async (
+    identity: string,
     participantName: string,
+    userType: UserType,
     roomChannel: RoomChannel | undefined,
     department: Department | undefined,
     productCategory: string,
@@ -204,6 +206,11 @@ export const createTokenForCustomerRoomAndParticipant = async (
     // // Identifier to be used for participant.
     // // It's available as LocalParticipant.identity with livekit-client SDK
     // const participantName = 'quickstart-username';
+    if (identity == null || identity == "") {
+        identity = userType.toString() +
+            Math.floor(10000 + Math.random() * 900000).toString();
+    }
+
     try {
         const createdRoom = await createCustomerRoom(
             roomChannel,
@@ -214,7 +221,8 @@ export const createTokenForCustomerRoomAndParticipant = async (
             process.env.LIVEKIT_API_KEY,
             process.env.LIVEKIT_API_SECRET,
             {
-                identity: participantName,
+                identity: identity, // MUST NOT BE NULL OR EMPTY. Otherwise no tokens are generated.
+                name: participantName,               
 
                 // Token to expire after 10 minutes
                 //ttl: "10m",

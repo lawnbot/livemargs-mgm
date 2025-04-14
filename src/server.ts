@@ -207,7 +207,9 @@ wss.on(
             console.log(roomDetails);
 
             const at = await createTokenForCustomerRoomAndParticipant(
+              user.identity,
               user.name,
+              user.userType,
               roomDetails.channel,
               roomDetails.department,
               roomDetails.productCategory,

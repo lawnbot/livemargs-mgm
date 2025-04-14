@@ -30,7 +30,7 @@ export interface WSFeedback {
     fbType: string;
     fbMessage?: string;
     fbNumberValue?: number;
-    fbData?: any;
+    fbData?: string;
 }
 export enum FbStatus {
     Undefined = 0,

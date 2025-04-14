@@ -1,5 +1,6 @@
 export interface User {
     uuid: string;
+    identity: string;
     name: string;
     email: string;
     userType: UserType;
@@ -7,15 +8,17 @@ export interface User {
     moderatorToken: string;
 }
 
-enum UserType {
-    Enduser,
-    Moderator,
+export enum UserType {
+    Enduser = "enduser",
+    Dealer = "dealer",
+    Moderator = "moderator",
 }
 
-enum UserStatus {
+export enum UserStatus {
     available,
+    occupied,
     offline,
 }
 
 // Create PIN and save it in redis to allow to open the room with a different device
-//Check mail + PIN for cross device joining
+// Check mail + PIN for cross device joining
