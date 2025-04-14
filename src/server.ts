@@ -218,7 +218,7 @@ wss.on(
               originalCommand: "get-customer-room-or-queue-up",
               fbType: "customerRoomTokenCreated",
               fbMessage: "Created new room for customer.",
-              fbData: JSON.stringify(at),
+              fbData: at,
             };
             ws.send(JSON.stringify(wsFb));
 
