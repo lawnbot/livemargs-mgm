@@ -23,7 +23,7 @@ import {
   setCustomerHeartbeat,
   setModeratorHeartbeat,
 } from "./controllers/livekit.js";
-import { RoomDetails } from "./models/RoomDetails.js";
+import { RoomDetails } from "./models/room-details.js";
 import { FbStatus, FbType, WSFeedback } from "./models/ws-feedback.js";
 
 // Initialize dotenv to load environment variables from .env file
@@ -89,7 +89,7 @@ wss.on(
         ws.send(JSON.stringify(wsFb));
       }
       if (command === "protected-moderator-route") {
-        const [blockAccess, jwtEmail] = getModeartorTokenPermission(user);
+        const [blockAccess, jwtEmail] = getModeratorTokenPermission(user);
 
         if (blockAccess) {
           const wsFb: WSFeedback = {
@@ -119,7 +119,7 @@ wss.on(
         }
       }
       if (command === "protected-moderator-create-internal-room") {
-        const [blockAccess, jwtEmail] = getModeartorTokenPermission(user);
+        const [blockAccess, jwtEmail] = getModeratorTokenPermission(user);
 
         if (!blockAccess) {
           const room = await createInternalRoom(undefined);
@@ -133,14 +133,7 @@ wss.on(
 
           ws.send(JSON.stringify(wsFb));
 
-          // ws.send(
-          //   JSON.stringify({
-          //     fbStatus: 200,
-          //     fbCommand: "roomCreated",
-          //     fbMessage: "Room created.",
-          //     fbData: JSON.stringify(room),
-          //   }),
-          // );
+        
         } else {
           const wsFb: WSFeedback = {
             fbStatus: FbStatus.Unauthorized,
@@ -153,7 +146,7 @@ wss.on(
         }
       }
       if (command === "protected-moderator-get-all-rooms") {
-        const [blockAccess, jwtEmail] = getModeartorTokenPermission(user);
+        const [blockAccess, jwtEmail] = getModeratorTokenPermission(user);
 
         if (!blockAccess) {
           const rooms = await getAllRooms();
@@ -332,16 +325,16 @@ const expressServer = server.listen(PORT, async () => {
 
 export { wss };
 
-const getModeartorTokenPermission = (
+const getModeratorTokenPermission = (
   user: User,
 ): [boolean, string?] => {
   let blockAccess: boolean = false;
   let jwtPayloadEmail: string = "";
-  if (user.moderatorToken === "") {
+  if (user.mgmAccessToken === "") {
     blockAccess = true;
   }
   jwt.verify(
-    user.moderatorToken,
+    user.mgmAccessToken,
     process.env.JWT_SECRET!,
     (err, email) => {
       if (err) {

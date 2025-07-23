@@ -15,12 +15,12 @@ export class RoomDetails {
 //  - Max. 1 Sales chat room
 
 export enum RoomChannel {
-    Customer, // Dealer or End-user
-    Internal, //pure internal (for live meetings)
+    Customer = "customer", // Dealer or End-user
+    Internal = "internal", //pure internal (for live meetings)
 }
 
 export enum Department {
-    Sales,
-    CustomerService,
-    Finance,
+    Sales = "sales",
+    CustomerService = "customerService",
+    Finance = "finance",
 }

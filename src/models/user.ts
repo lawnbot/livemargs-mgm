@@ -5,7 +5,7 @@ export interface User {
     email: string;
     userType: UserType;
     status: UserStatus;
-    moderatorToken: string;
+    mgmAccessToken: string;
 }
 
 export enum UserType {

@@ -8,7 +8,7 @@ import { CreateOptions, Room, RoomServiceClient } from "livekit-server-sdk";
 import { wss } from "../server.js";
 import { User, UserType } from "../models/user.js";
 import { FbStatus, WSFeedback } from "../models/ws-feedback.js";
-import { Department, RoomChannel, RoomDetails } from "../models/RoomDetails.js";
+import { Department, RoomChannel, RoomDetails } from "../models/room-details.js";
 import {
     addUser,
     getNextUser,
