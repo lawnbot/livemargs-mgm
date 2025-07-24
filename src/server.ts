@@ -325,6 +325,7 @@ const expressServer = server.listen(PORT, async () => {
 
 export { wss };
 
+/*Async version with unexpected behavior
 const getModeratorTokenPermission = (
   user: User,
 ): [boolean, string?] => {
@@ -343,5 +344,25 @@ const getModeratorTokenPermission = (
       jwtPayloadEmail = email as string;
     },
   );
+  return [blockAccess, jwtPayloadEmail];
+};
+*/
+
+// Sync version with expected behavior
+const getModeratorTokenPermission = (user: User): [boolean, string?] => {
+  let blockAccess = false;
+  let jwtPayloadEmail: string | undefined;
+
+  if (!user.mgmAccessToken) {
+    return [true, undefined];
+  }
+
+  try {
+    const decoded = jwt.verify(user.mgmAccessToken, process.env.JWT_SECRET!) as { email?: string };
+    jwtPayloadEmail = decoded.email;
+  } catch (err) {
+    blockAccess = true;
+  }
+
   return [blockAccess, jwtPayloadEmail];
 };
