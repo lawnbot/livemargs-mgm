@@ -353,7 +353,7 @@ const getModeratorTokenPermission = (user: User): [boolean, string?] => {
   let blockAccess = false;
   let jwtPayloadEmail: string | undefined;
 
-  if (!user.mgmAccessToken) {
+  if (user.mgmAccessToken == null || user.mgmAccessToken === "" ) {
     return [true, undefined];
   }
 
@@ -361,6 +361,7 @@ const getModeratorTokenPermission = (user: User): [boolean, string?] => {
     const decoded = jwt.verify(user.mgmAccessToken, process.env.JWT_SECRET!) as { email?: string };
     jwtPayloadEmail = decoded.email;
   } catch (err) {
+    console.log('Error at verifying ws mgmAccessToken: ' +err);
     blockAccess = true;
   }
 
