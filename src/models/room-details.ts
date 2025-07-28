@@ -3,6 +3,9 @@ export class RoomDetails {
         public channel: RoomChannel | undefined,
         public department: Department | undefined,
         public productCategory: string,
+        public requestingHelp: RequestingHelp = RequestingHelp.none,
+        public requestingHelpSince: Date | undefined = undefined,
+        public roomTitle: string = "",
     ) {
     }
 }
@@ -23,4 +26,10 @@ export enum Department {
     Sales = "sales",
     CustomerService = "customerService",
     Finance = "finance",
+}
+
+export enum RequestingHelp {
+    none = 0,
+    std = 1,
+    byManager = 2,
 }

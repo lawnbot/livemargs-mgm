@@ -5,10 +5,16 @@ import {
     ParticipantPermission,
 } from "livekit-server-sdk";
 import { CreateOptions, Room, RoomServiceClient } from "livekit-server-sdk";
+import { customAlphabet } from "nanoid";
 import { wss } from "../server.js";
 import { User, UserType } from "../models/user.js";
 import { FbStatus, WSFeedback } from "../models/ws-feedback.js";
-import { Department, RoomChannel, RoomDetails } from "../models/room-details.js";
+import {
+    Department,
+    RequestingHelp,
+    RoomChannel,
+    RoomDetails,
+} from "../models/room-details.js";
 import {
     addUser,
     getNextUser,
@@ -24,6 +30,11 @@ const roomService = new RoomServiceClient(
     process.env.LIVEKIT_API_KEY,
     process.env.LIVEKIT_API_SECRET,
 );
+
+const alphabet =
+    "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+//Nano ID Collision Calculator https://zelark.github.io/nano-id-cc/
+const nanoid = customAlphabet(alphabet, 9);
 
 /*
 
@@ -152,14 +163,24 @@ export const createCustomerRoom = async (
 ): Promise<Room> => {
     const currentTime = new Date().toLocaleTimeString();
     // create a new room
-    const roomDetails = new RoomDetails(
-        roomChannel,
-        department,
-        productCategory,
-    );
+    // const roomDetails = new RoomDetails(
+    //     roomChannel,
+    //     department,
+    //     productCategory,
+    //     RequestingHelp.none,
+    //     undefined,
+    // );
+    const roomDetails: RoomDetails = {
+        channel: roomChannel,
+        department: department,
+        productCategory: productCategory,
+        requestingHelp: RequestingHelp.none,
+        requestingHelpSince: undefined,
+        roomTitle: "",
+    };
 
     const opts: CreateOptions = {
-        name: "CustRoom:" + currentTime,
+        name: "1" + nanoid(), //"CustRoom:" + currentTime,
         // timeout in seconds
         departureTimeout: 30,
         //emptyTimeout: 10 * 60,
@@ -170,19 +191,58 @@ export const createCustomerRoom = async (
     return await roomService.createRoom(opts);
 };
 
+export const createAccessTokenForRoom = async (
+    roomName: string,
+    user: User,
+    hasModeratorAccess: boolean = false,
+): Promise<string> => {
+    try {
+        const at = new AccessToken(
+            process.env.LIVEKIT_API_KEY,
+            process.env.LIVEKIT_API_SECRET,
+            {
+                identity: user.identity, // MUST NOT BE NULL OR EMPTY. Otherwise no tokens are generated.
+                name: user.name,
+
+                // Token to expire after 10 minutes
+                //ttl: "10m",
+                ttl: process.env.LIVEKIT_ACCESS_TOKEN_LIFETIME,
+            },
+        );
+        at.addGrant({
+            roomCreate: true, //Allow to create rooms as as someone meight want to recover a historic room.
+            roomJoin: true,
+            room: roomName,
+            roomList: hasModeratorAccess,
+            roomRecord: hasModeratorAccess,
+            canPublish: true,
+            canSubscribe: true,
+            canPublishData: true,
+            canUpdateOwnMetadata: true,
+            canSubscribeMetrics: true,
+        });
+
+        return await at.toJwt();
+    } catch (e) {
+        return "";
+    }
+};
+
 export const createInternalRoom = async (
     department: Department | undefined,
 ): Promise<Room> => {
-    const currentTime = new Date().toLocaleTimeString();
+    //const currentTime = new Date().toLocaleTimeString();
     // create a new room
     const roomDetails = new RoomDetails(
         RoomChannel.Internal,
         department,
         "",
+        RequestingHelp.none,
+        undefined,
     );
 
     const opts: CreateOptions = {
-        name: "InternalRoom:" + currentTime,
+        name: "0" + nanoid(), //"InternalRoom:" + currentTime,
         // timeout in seconds
         departureTimeout: 5 * 60,
         maxParticipants: 50,
@@ -222,7 +282,7 @@ export const createTokenForCustomerRoomAndParticipant = async (
             process.env.LIVEKIT_API_SECRET,
             {
                 identity: identity, // MUST NOT BE NULL OR EMPTY. Otherwise no tokens are generated.
-                name: participantName,               
+                name: participantName,
 
                 // Token to expire after 10 minutes
                 //ttl: "10m",

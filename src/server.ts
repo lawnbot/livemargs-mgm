@@ -15,6 +15,7 @@ import client from "./db/redisClient.js";
 import { redisPublisher, redisSubscriber } from "./db/redisPubSub.js";
 import { User } from "./models/user.js";
 import {
+  createAccessTokenForRoom,
   createCustomerRoom,
   createInternalRoom,
   createTokenForCustomerRoomAndParticipant,
@@ -25,6 +26,7 @@ import {
 } from "./controllers/livekit.js";
 import { RoomDetails } from "./models/room-details.js";
 import { FbStatus, FbType, WSFeedback } from "./models/ws-feedback.js";
+import { nanoid } from "nanoid";
 
 // Initialize dotenv to load environment variables from .env file
 dotenv.config();
@@ -122,7 +124,8 @@ wss.on(
         const [blockAccess, jwtEmail] = getModeratorTokenPermission(user);
 
         if (!blockAccess) {
-          const room = await createInternalRoom(undefined);
+          const roomDetails = messageData as RoomDetails;
+          const room = await createInternalRoom(roomDetails.department);
           const wsFb: WSFeedback = {
             fbStatus: FbStatus.Okay,
             originalCommand: "protected-moderator-create-internal-room",
@@ -132,8 +135,6 @@ wss.on(
           };
 
           ws.send(JSON.stringify(wsFb));
-
-        
         } else {
           const wsFb: WSFeedback = {
             fbStatus: FbStatus.Unauthorized,
@@ -168,6 +169,103 @@ wss.on(
           };
 
           ws.send(JSON.stringify(wsFb));
+        }
+      }
+      if (command === "create-room-name") {
+        const messageDataMap = messageData as Map<string, any>;
+        const interalRoom = messageDataMap.get("internalRoom") ?? false;
+        let authFailed = false;
+        let roomName = "";
+        if (interalRoom) {
+          const [blockAccess, jwtEmail] = getModeratorTokenPermission(user);
+          authFailed = blockAccess;
+          if (!blockAccess) {
+            roomName = +"0" + nanoid(9);
+          }
+        } else {
+          roomName = +"1" + nanoid(9);
+        }
+
+        if (authFailed) {
+          const wsFb: WSFeedback = {
+            fbStatus: FbStatus.Error,
+            fbType: FbType.Error,
+            originalCommand: "create-access-token-for-room",
+            fbMessage: "Authentication for creating interal room failed.",
+          };
+          ws.send(JSON.stringify(wsFb));
+        } else {
+          const wsFb: WSFeedback = {
+            fbStatus: FbStatus.Okay,
+            originalCommand: "create-room-name",
+            fbType: "roomNameCreated",
+            fbMessage: "Created room name id.",
+            fbData: roomName,
+          };
+          ws.send(JSON.stringify(wsFb));
+        }
+      }
+      if (command === "create-access-token-for-room") {
+        const messageDataMap = messageData as Map<string, any>;
+        const roomName = messageDataMap.get("roomName");
+
+        if (roomName == undefined || roomName === "" || roomName.length < 9) {
+          const wsFb: WSFeedback = {
+            fbStatus: FbStatus.Error,
+            fbType: FbType.Error,
+            originalCommand: "create-access-token-for-room",
+            fbMessage: "Room name is required.",
+          };
+          ws.send(JSON.stringify(wsFb));
+        } else {
+          let at = "";
+          let authFailed = false;
+
+          // Means it is an internal room
+          if (roomName.startsWith("0")) {
+            const [blockAccess, jwtEmail] = getModeratorTokenPermission(user);
+            authFailed = blockAccess;
+
+            at = await createAccessTokenForRoom(
+              roomName,
+              user,
+              !blockAccess,
+            );
+
+            // Means it is an external room
+          } else if (roomName.startsWith("1")) {
+            at = await createAccessTokenForRoom(
+              roomName,
+              user,
+            );
+          }
+          if (authFailed) {
+            const wsFb: WSFeedback = {
+              fbStatus: FbStatus.Unauthorized,
+              originalCommand: "create-access-token-for-room",
+              fbType: FbType.Error, //"createAccessTokenForRoomFailed",
+              fbMessage: "Moderator token missing or wrong.",
+            };
+
+            ws.send(JSON.stringify(wsFb));
+          } else if (at === "") {
+            const wsFb: WSFeedback = {
+              fbStatus: FbStatus.Error,
+              originalCommand: "create-access-token-for-room",
+              fbType: FbType.Error, //"createAccessTokenForRoomFailed",
+              fbMessage: "Could not create access token for room.",
+            };
+            ws.send(JSON.stringify(wsFb));
+          } else {
+            const wsFb: WSFeedback = {
+              fbStatus: FbStatus.Okay,
+              originalCommand: "create-access-token-for-room",
+              fbType: "accessTokenForRoomCreated",
+              fbMessage: "Created access token for room.",
+              fbData: at,
+            };
+            ws.send(JSON.stringify(wsFb));
+          }
         }
       }
 
@@ -247,14 +345,6 @@ wss.on(
           ws.send(JSON.stringify(wsFb));
           break;
       }
-      /*             const { command, user } = JSON.parse(message.toString()) as {
-                command: string;
-                user: User;
-            };
-            if (command === "join") {
-                const position = addUser(user);
-            }
-            */
     });
     // Handle connection close
     ws.on("close", async () => {
@@ -353,15 +443,18 @@ const getModeratorTokenPermission = (user: User): [boolean, string?] => {
   let blockAccess = false;
   let jwtPayloadEmail: string | undefined;
 
-  if (user.mgmAccessToken == null || user.mgmAccessToken === "" ) {
+  if (user.mgmAccessToken == null || user.mgmAccessToken === "") {
     return [true, undefined];
   }
 
   try {
-    const decoded = jwt.verify(user.mgmAccessToken, process.env.JWT_SECRET!) as { email?: string };
+    const decoded = jwt.verify(
+      user.mgmAccessToken,
+      process.env.JWT_SECRET!,
+    ) as { email?: string };
     jwtPayloadEmail = decoded.email;
   } catch (err) {
-    console.log('Error at verifying ws mgmAccessToken: ' +err);
+    console.log("Error at verifying ws mgmAccessToken: " + err);
     blockAccess = true;
   }
 
