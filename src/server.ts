@@ -172,8 +172,11 @@ wss.on(
         }
       }
       if (command === "create-room-name") {
-        const messageDataMap = messageData as Map<string, any>;
-        const interalRoom = messageDataMap.get("internalRoom") ?? false;
+         interface MessageData {
+          internalRoom?: boolean;
+        }
+        const messageDataObj = messageData as MessageData;    
+        const interalRoom = messageDataObj?.internalRoom ?? false;
         let authFailed = false;
         let roomName = "";
         if (interalRoom) {
@@ -206,8 +209,11 @@ wss.on(
         }
       }
       if (command === "create-access-token-for-room") {
-        const messageDataMap = messageData as Map<string, any>;
-        const roomName = messageDataMap.get("roomName");
+        interface MessageData {
+          roomName: string;
+        }
+        const messageDataObj = messageData as MessageData;
+        const roomName = messageDataObj.roomName;
 
         if (roomName == undefined || roomName === "" || roomName.length < 9) {
           const wsFb: WSFeedback = {
