@@ -304,44 +304,13 @@ export const createTokenForCustomerRoomAndParticipant = async (
     }
 };
 
-//websocketServer.clients.forEach()
-function broadcastQueuePositions() {
-    wss.clients.forEach((client) => {
-        if (client.readyState === client.OPEN) {
-            const wsFb: WSFeedback = {
-                fbStatus: FbStatus.Okay,
-                originalCommand: "none",
-                fbType: "broadcastedQueuePositions",
-                fbData: JSON.stringify({
-                    type: "update",
-                    queue: waitingQueue.map((user) => ({
-                        id: user.uuid,
-                        position: getQueuePosition(user.uuid),
-                    })),
-                }),
-            };
-
-            client.send(JSON.stringify(wsFb));
-        }
-    });
-}
-
-const broadcastTime = () => {
-    const currentTime = new Date().toLocaleTimeString();
-    wss.clients.forEach((client) => {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(currentTime);
-        }
-    });
-};
-
 const broadcastActiveModerators = async () => {
     wss.clients.forEach(async (client) => {
         if (client.readyState === WebSocket.OPEN) {
             const wsFb: WSFeedback = {
                 fbStatus: FbStatus.Okay,
                 originalCommand: "none",
-                fbType: "activeModerators",
+                fbCommand: "active-moderators",
                 fbNumberValue: await getActiveModerators(),
             };
 

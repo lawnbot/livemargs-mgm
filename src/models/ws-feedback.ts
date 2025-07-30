@@ -27,7 +27,7 @@
 export interface WSFeedback {
     fbStatus: FbStatus;
     originalCommand: string;
-    fbType: string;
+    fbCommand: string;
     fbMessage?: string;
     fbNumberValue?: number;
     fbData?: string;
@@ -38,10 +38,4 @@ export enum FbStatus {
     Created = 201,
     Error = 400,
     Unauthorized = 401,
-}
-export enum FbType {
-    Error = "error",
-    MessageResponse = "messageResponse",
-    NumberResponse = "numberResponse",
-    DataResponse = "dataResponse",
 }
