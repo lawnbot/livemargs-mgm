@@ -6,12 +6,12 @@ export function addUser(user: User) {
     waitingQueue.push(user);
 }
 
-export function removeUser(userUUID: String) {
-    waitingQueue.filter((user) => user.uuid !== userUUID);
+export function removeUser(nanoID: String) {
+    waitingQueue.filter((user) => user.nanoid !== nanoID);
 }
 
-export function getQueuePosition(userUUID: String): number {
-    return waitingQueue.findIndex((user) => user.uuid === userUUID) + 1;
+export function getQueuePosition(nanoID: String): number {
+    return waitingQueue.findIndex((user) => user.nanoid === nanoID) + 1;
 }
 
 export function getNextUser(): User | undefined {
