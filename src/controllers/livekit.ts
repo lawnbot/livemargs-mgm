@@ -9,12 +9,7 @@ import { customAlphabet } from "nanoid";
 import { wss } from "../server.js";
 import { User, UserType } from "../models/user.js";
 import { FbStatus, WSFeedback } from "../models/ws-feedback.js";
-import {
-    Department,
-    RequestingHelp,
-    RoomChannel,
-    RoomDetails,
-} from "../models/room-details.js";
+import { RoomChannel, RoomDetails } from "../models/room-details.js";
 import {
     addUser,
     getNextUser,
@@ -156,35 +151,21 @@ export const getCustomerRooms = async (): Promise<Room[]> => {
     });
 };
 
-export const createCustomerRoom = async (
-    roomChannel: RoomChannel | undefined,
-    department: Department | undefined,
-    productCategory: string,
+export const createRoom = async (
+    roomDetails: RoomDetails,
+    roomName?: string,
 ): Promise<Room> => {
-    const currentTime = new Date().toLocaleTimeString();
-    // create a new room
-    // const roomDetails = new RoomDetails(
-    //     roomChannel,
-    //     department,
-    //     productCategory,
-    //     RequestingHelp.none,
-    //     undefined,
-    // );
-    const roomDetails: RoomDetails = {
-        channel: roomChannel,
-        department: department,
-        productCategory: productCategory,
-        requestingHelp: RequestingHelp.none,
-        requestingHelpSince: undefined,
-        roomTitle: "",
-    };
-
     const opts: CreateOptions = {
-        name: "1" + nanoid(), //"CustRoom:" + currentTime,
+        name: roomName != null && roomName != undefined
+            ? roomName
+            : roomDetails.channel == RoomChannel.Internal
+            ? RoomChannel.Internal.toString() + nanoid(9)
+            : RoomChannel.Customer.toString() + nanoid(9),
         // timeout in seconds
         departureTimeout: 30,
         //emptyTimeout: 10 * 60,
-        maxParticipants: 10,
+        //maxParticipants: 10,
+
         metadata: JSON.stringify(roomDetails),
     };
 
@@ -220,82 +201,6 @@ export const createAccessTokenForRoom = async (
             canPublishData: true,
             canUpdateOwnMetadata: true,
             canSubscribeMetrics: true,
-        });
-
-        return await at.toJwt();
-    } catch (e) {
-        return "";
-    }
-};
-
-export const createInternalRoom = async (
-    department: Department | undefined,
-): Promise<Room> => {
-    //const currentTime = new Date().toLocaleTimeString();
-    // create a new room
-    const roomDetails = new RoomDetails(
-        RoomChannel.Internal,
-        department,
-        "",
-        RequestingHelp.none,
-        undefined,
-    );
-
-    const opts: CreateOptions = {
-        name: "0" + nanoid(), //"InternalRoom:" + currentTime,
-        // timeout in seconds
-        departureTimeout: 5 * 60,
-        maxParticipants: 50,
-        metadata: JSON.stringify(roomDetails),
-    };
-
-    return await roomService.createRoom(opts);
-};
-
-export const createTokenForCustomerRoomAndParticipant = async (
-    identity: string,
-    participantName: string,
-    userType: UserType,
-    roomChannel: RoomChannel | undefined,
-    department: Department | undefined,
-    productCategory: string,
-): Promise<string> => {
-    // If this room doesn't exist, it'll be automatically created when the first
-    // participant joins
-    // const roomName = 'quickstart-room';
-    // // Identifier to be used for participant.
-    // // It's available as LocalParticipant.identity with livekit-client SDK
-    // const participantName = 'quickstart-username';
-    if (identity == null || identity == "") {
-        identity = userType.toString() +
-            Math.floor(10000 + Math.random() * 900000).toString();
-    }
-
-    try {
-        const createdRoom = await createCustomerRoom(
-            roomChannel,
-            department,
-            productCategory,
-        );
-        const at = new AccessToken(
-            process.env.LIVEKIT_API_KEY,
-            process.env.LIVEKIT_API_SECRET,
-            {
-                identity: identity, // MUST NOT BE NULL OR EMPTY. Otherwise no tokens are generated.
-                name: participantName,
-
-                // Token to expire after 10 minutes
-                //ttl: "10m",
-                ttl: process.env.LIVEKIT_ACCESS_TOKEN_LIFETIME,
-            },
-        );
-        at.addGrant({
-            roomJoin: true,
-            room: createdRoom.name,
-            roomList: true,
-            roomRecord: false,
-            canPublish: true,
-            canSubscribe: true,
         });
 
         return await at.toJwt();

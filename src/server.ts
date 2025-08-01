@@ -16,15 +16,14 @@ import { redisPublisher, redisSubscriber } from "./db/redisPubSub.js";
 import { User } from "./models/user.js";
 import {
   createAccessTokenForRoom,
-  createCustomerRoom,
-  createInternalRoom,
-  createTokenForCustomerRoomAndParticipant,
+  createRoom,
   getAllRooms,
   getCustomerRooms,
   setCustomerHeartbeat,
   setModeratorHeartbeat,
+  updateRoomMetadata,
 } from "./controllers/livekit.js";
-import { RoomDetails } from "./models/room-details.js";
+import { RoomChannel, RoomDetails } from "./models/room-details.js";
 import { FbStatus, WSFeedback } from "./models/ws-feedback.js";
 import { nanoid } from "nanoid";
 
@@ -157,7 +156,7 @@ wss.on(
         }
         const messageDataObj = messageData as MessageData;
         const interalRoom = messageDataObj?.internalRoom ?? false;
-        let authFailed = false;
+        let authFailed = false;        
         let roomName = "";
         const fbCommand: string = "fb-creating-room-name";
 
@@ -165,10 +164,10 @@ wss.on(
           const [blockAccess, jwtEmail] = getModeratorTokenPermission(user);
           authFailed = blockAccess;
           if (!blockAccess) {
-            roomName = +"0" + nanoid(9);
+            roomName = RoomChannel.Internal.toString() + nanoid(9);
           }
         } else {
-          roomName = +"1" + nanoid(9);
+          roomName = RoomChannel.Customer.toString() + nanoid(9);
         }
 
         if (authFailed) {
@@ -206,28 +205,24 @@ wss.on(
           };
           ws.send(JSON.stringify(wsFb));
         } else {
-          let at = "";
           let authFailed = false;
+          let authRequired = false;
 
-          // Means it is an internal room
-          if (roomName.startsWith("0")) {
-            const [blockAccess, jwtEmail] = getModeratorTokenPermission(user);
-            authFailed = blockAccess;
-
-            at = await createAccessTokenForRoom(
-              roomName,
-              user,
-              !blockAccess,
-            );
-
-            // Means it is an external room
-          } else if (roomName.startsWith("1")) {
-            at = await createAccessTokenForRoom(
-              roomName,
-              user,
-            );
+          if (
+            roomName.startsWith(RoomChannel.Internal.toString())
+          ) {
+            authRequired = true;
           }
-          if (authFailed) {
+
+          // Auth is required
+          if (
+            authRequired
+          ) {
+            const [blockAccess, jwtEmail] = getModeratorTokenPermission(user);
+            authFailed = blockAccess; // Is blocked means auth failed.
+          }
+
+          if (authRequired && authFailed) {
             const wsFb: WSFeedback = {
               fbStatus: FbStatus.Unauthorized,
               originalCommand: "create-access-token-for-room",
@@ -236,24 +231,134 @@ wss.on(
             };
 
             ws.send(JSON.stringify(wsFb));
-          } else if (at === "") {
-            const wsFb: WSFeedback = {
-              fbStatus: FbStatus.Error,
-              originalCommand: "create-access-token-for-room",
-              fbCommand: fbCommand, //"createAccessTokenForRoomFailed",
-              fbMessage: "Could not create access token for room.",
-            };
-            ws.send(JSON.stringify(wsFb));
           } else {
+            try {
+              const at = await createAccessTokenForRoom(
+                roomName,
+                user,
+                authRequired && !authFailed, // Means once auth is required (case of moderator) it must not have failed
+              );
+              if (at === "") {
+                throw new Error("Access token is empty.");
+              }
+              const wsFb: WSFeedback = {
+                fbStatus: FbStatus.Okay,
+                originalCommand: "create-access-token-for-room",
+                fbCommand: fbCommand,
+                fbMessage: "Created access token for room.",
+                fbData: at,
+              };
+              ws.send(JSON.stringify(wsFb));
+            } catch (e) {
+              const wsFb: WSFeedback = {
+                fbStatus: FbStatus.Error,
+                originalCommand: "create-access-token-for-room",
+                fbCommand: fbCommand, //"createAccessTokenForRoomFailed",
+                fbMessage: "Could not create access token for room.",
+              };
+              ws.send(JSON.stringify(wsFb));
+            }
+          }
+        }
+      }
+      if (command == "create-access-token-w-metadata-for-room") {
+        interface MessageData {
+          roomName: string;
+          roomDetails: RoomDetails;
+        }
+        const messageDataObj = messageData as MessageData;
+        const roomName = messageDataObj.roomName;
+        const roomDetails = messageDataObj.roomDetails;
+        const fbCommand: string =
+          "fb-creating-access-token-w-metadata-for-room";
+        let authFailed = false;
+        let authRequired = false;
+
+        if (
+          roomName.startsWith(RoomChannel.Internal.toString()) ||
+          roomDetails.channel == RoomChannel.Internal
+        ) {
+          authRequired = true;
+        }
+
+        // Auth is required
+        if (
+          authRequired
+        ) {
+          const [blockAccess, jwtEmail] = getModeratorTokenPermission(user);
+          authFailed = blockAccess; // Is blocked means auth failed.
+        }
+
+        if (authRequired && authFailed) {
+          const wsFb: WSFeedback = {
+            fbStatus: FbStatus.Unauthorized,
+            originalCommand: "create-access-token-w-metadata-for-room",
+            fbCommand: fbCommand, //"createAccessTokenForRoomFailed",
+            fbMessage: "Moderator token missing or wrong.",
+          };
+
+          ws.send(JSON.stringify(wsFb));
+        } else {
+          try {
+            const newRoom = await createRoom(roomDetails, roomName);
+            const at = await createAccessTokenForRoom(
+              roomName,
+              user,
+              authRequired && !authFailed, // Means once auth is required (case of moderator) it must not have failed
+            );
+            if (at === "") {
+              throw new Error("Access token is empty.");
+            }
             const wsFb: WSFeedback = {
               fbStatus: FbStatus.Okay,
-              originalCommand: "create-access-token-for-room",
+              originalCommand: "create-access-token-w-metadata-for-room",
               fbCommand: fbCommand,
-              fbMessage: "Created access token for room.",
+              fbMessage: "Could create access token with metadata for room.",
               fbData: at,
             };
             ws.send(JSON.stringify(wsFb));
+          } catch (e) {
+            const wsFb: WSFeedback = {
+              fbStatus: FbStatus.Error,
+              originalCommand: "create-access-token-w-metadata-for-room",
+              fbCommand: fbCommand,
+              fbMessage:
+                "Could not create access token with metadata for room.",
+            };
+            ws.send(JSON.stringify(wsFb));
           }
+        }
+      }
+
+      if (command == "update-room-metadata") {
+        interface MessageData {
+          roomName: string;
+          roomDetails: RoomDetails;
+        }
+        const messageDataObj = messageData as MessageData;
+        const roomName = messageDataObj.roomName;
+        const roomDetails = messageDataObj.roomDetails;
+        const fbCommand: string = "fb-updating-room-metadata";
+        try {
+          const room = await updateRoomMetadata(
+            roomName,
+            JSON.stringify(roomDetails),
+          );
+          const wsFb: WSFeedback = {
+            fbStatus: FbStatus.Okay,
+            originalCommand: "update-room-metadata",
+            fbCommand: fbCommand,
+            fbMessage: "Could update room metadata.",
+          };
+          ws.send(JSON.stringify(wsFb));
+        } catch (e) {
+          const wsFb: WSFeedback = {
+            fbStatus: FbStatus.Error,
+            originalCommand: "update-room-metadata",
+            fbCommand: fbCommand,
+            fbMessage: "Could not update room metadata.",
+          };
+          ws.send(JSON.stringify(wsFb));
         }
       }
     });

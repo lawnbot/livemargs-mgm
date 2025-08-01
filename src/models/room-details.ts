@@ -1,11 +1,12 @@
 export class RoomDetails {
     constructor(
-        public channel: RoomChannel | undefined,
+        public channel: RoomChannel,
         public department: Department | undefined,
         public productCategory: string,
         public requestingHelp: RequestingHelp = RequestingHelp.none,
         public requestingHelpSince: Date | undefined = undefined,
         public roomTitle: string = "",
+        public ticketStatus: TicketStatus,
     ) {
     }
 }
@@ -18,8 +19,8 @@ export class RoomDetails {
 //  - Max. 1 Sales chat room
 
 export enum RoomChannel {
-    Customer = "customer", // Dealer or End-user
-    Internal = "internal", //pure internal (for live meetings)
+    Internal = 0, //pure internal (for live meetings)
+    Customer = 1, // Dealer or End-user
 }
 
 export enum Department {
@@ -32,4 +33,10 @@ export enum RequestingHelp {
     none = 0,
     std = 1,
     byManager = 2,
+}
+
+export enum TicketStatus {
+    open = 0,
+    waitingOnFeedback = 1,
+    closed = 2,
 }
