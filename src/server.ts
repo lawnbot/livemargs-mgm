@@ -27,6 +27,9 @@ import { RoomChannel, RoomDetails } from "./models/room-details.js";
 import { FbStatus, WSFeedback } from "./models/ws-feedback.js";
 import { nanoid } from "nanoid";
 
+import { ChatMessage } from "./models/chat-message.js";
+import { MongoDBService } from "./db/mongo-db-service.js";
+
 // Initialize dotenv to load environment variables from .env file
 dotenv.config();
 const app: Application = express();
@@ -38,6 +41,7 @@ const wss = new WebSocketServer({
 const PORT = process.env.PORT || 3000;
 const portWS: string = process.env.PORT_WS ?? "3001";
 const PORT_WS = parseInt(portWS);
+const mongoDBService = new MongoDBService();
 
 wss.on(
   "connection",
@@ -156,7 +160,7 @@ wss.on(
         }
         const messageDataObj = messageData as MessageData;
         const interalRoom = messageDataObj?.internalRoom ?? false;
-        let authFailed = false;        
+        let authFailed = false;
         let roomName = "";
         const fbCommand: string = "fb-creating-room-name";
 
@@ -361,6 +365,64 @@ wss.on(
           ws.send(JSON.stringify(wsFb));
         }
       }
+      if (command == "save-chat-message-for-room") {
+        interface MessageData {
+          roomName: string;
+          chatMessage: ChatMessage;
+        }
+        const messageDataObj = messageData as MessageData;
+        const roomName = messageDataObj.roomName;
+        const chatMessage = messageDataObj.chatMessage;
+        const fbCommand: string = "fb-saving-chat-message-for-room";
+        try {
+          await mongoDBService.saveChatMessage(roomName, chatMessage);
+          const wsFb: WSFeedback = {
+            fbStatus: FbStatus.Okay,
+            originalCommand: "save-chat-message-for-room",
+            fbCommand: fbCommand,
+            fbMessage: "Could save chat message for room.",
+          };
+          ws.send(JSON.stringify(wsFb));
+        } catch (e) {
+          const wsFb: WSFeedback = {
+            fbStatus: FbStatus.Error,
+            originalCommand: "save-chat-message-for-room",
+            fbCommand: fbCommand,
+            fbMessage: "Could not save chat message for room.",
+          };
+          ws.send(JSON.stringify(wsFb));
+        }
+      }
+      if (command == "get-chat-messages-for-room") {
+        interface MessageData {
+          roomName: string;
+        }
+        const messageDataObj = messageData as MessageData;
+        const roomName = messageDataObj.roomName;
+
+        const fbCommand: string = "fb-get-chat-messages-for-room";
+        try {
+          const chatMessages = await mongoDBService.getChatMessagesByRoom(
+            roomName,
+          );
+          const wsFb: WSFeedback = {
+            fbStatus: FbStatus.Okay,
+            originalCommand: "get-chat-messages-for-room",
+            fbCommand: fbCommand,
+            fbMessage: "Could get chat messages for room.",
+            fbData: JSON.stringify(chatMessages),
+          };
+          ws.send(JSON.stringify(wsFb));
+        } catch (e) {
+          const wsFb: WSFeedback = {
+            fbStatus: FbStatus.Error,
+            originalCommand: "get-chat-messages-for-room",
+            fbCommand: fbCommand,
+            fbMessage: "Could not get chat messages for room.",
+          };
+          ws.send(JSON.stringify(wsFb));
+        }
+      }
     });
     // Handle connection close
     ws.on("close", async () => {
@@ -427,6 +489,8 @@ const expressServer = server.listen(PORT, async () => {
   console.log(
     "Redis DB Livekit Version " + await client.get("livekit_version"),
   );
+  await mongoDBService.connect();
+  console.log("MongoDb: ");
 });
 
 export { wss };
