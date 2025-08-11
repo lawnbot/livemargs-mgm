@@ -27,8 +27,9 @@ import { RoomChannel, RoomDetails } from "./models/room-details.js";
 import { FbStatus, WSFeedback } from "./models/ws-feedback.js";
 import { nanoid } from "nanoid";
 
-import { ChatMessage } from "./models/chat-message.js";
+import { ChatMessage, MessageType } from "./models/chat-message.js";
 import { MongoDBService } from "./db/mongo-db-service.js";
+import { startLangChainStream } from "./controllers/ai.js";
 
 // Initialize dotenv to load environment variables from .env file
 dotenv.config();
@@ -419,6 +420,69 @@ wss.on(
             originalCommand: "get-chat-messages-for-room",
             fbCommand: fbCommand,
             fbMessage: "Could not get chat messages for room.",
+          };
+          ws.send(JSON.stringify(wsFb));
+        }
+      }
+
+      if (command == "stream-ai-query-to-participant") {
+        interface MessageData {
+          roomName: string;
+          query: string;
+        }
+        const messageDataObj = messageData as MessageData;
+        const roomName = messageDataObj.roomName;
+        const query = messageDataObj.query;
+        const fbCommand = "fb-stream-ai-query";
+        const messageId = nanoid(9); // That flutter knows to which message add the chunk
+        const chunks = [];
+        try {
+          const stream = await startLangChainStream(query);
+          for await (const chunk of stream) {
+            chunks.push(chunk);
+            // Sende jeden Chunk sofort an den Client
+            const wsFb: WSFeedback = {
+              fbStatus: FbStatus.Okay,
+              originalCommand: "stream-ai-query-to-participant",
+              fbCommand: fbCommand,
+              fbMessage: "AI stream chunk",
+              fbData: JSON.stringify({ roomName, messageId, chunk }),
+            };
+            ws.send(JSON.stringify(wsFb));
+          }
+
+          const joinedMessage = chunks.join();
+          // Save AI message to let it see also other users once they join.
+          await mongoDBService.saveChatMessage(roomName, {
+            messageId: messageId,
+            participantId: "ai",
+            text: joinedMessage,
+            aiQueryContext: "",
+            timestamp: Date.now(),
+            type: MessageType.Text,
+          });
+
+          // Send finish Event
+          const wsFb: WSFeedback = {
+            fbStatus: FbStatus.Okay,
+            originalCommand: "stream-ai-query-to-participant",
+            fbCommand: fbCommand,
+            fbMessage: "AI stream finished",
+            fbData: JSON.stringify({
+              roomName,
+              messageId,
+              text: joinedMessage,
+              done: true,
+            }),
+          };
+
+          ws.send(JSON.stringify(wsFb));
+        } catch (e) {
+          const wsFb: WSFeedback = {
+            fbStatus: FbStatus.Error,
+            originalCommand: "stream-ai-query-to-participant",
+            fbCommand: fbCommand,
+            fbMessage: "AI stream failed",
           };
           ws.send(JSON.stringify(wsFb));
         }

@@ -1,6 +1,8 @@
 export interface ChatMessage {
+    messageId: string,
     participantId: string;
     text: string;
+    aiQueryContext: string
     mediaUri?: string;
     fileName?: string;
     fileSize?: string;

@@ -1,11 +1,9 @@
 import { ChatOpenAI, OpenAI, OpenAIEmbeddings } from "@langchain/openai";
 import { createStuffDocumentsChain } from "langchain/chains/combine_documents";
-import { Content, StringOutputParser } from "@langchain/core/output_parsers";
+import { StringOutputParser } from "@langchain/core/output_parsers";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { Chroma } from "@langchain/community/vectorstores/chroma";
-import { NextFunction, Request, Response } from "express";
-import { StreamEvent,StreamEventData } from '@langchain/core/tracers/log_stream';
-
+import { Request, Response } from "express";
 
 export const getAIResult = async (req: Request, res: Response) => {
     const { query } = req.body as { query: string };
@@ -14,6 +12,49 @@ export const getAIResult = async (req: Request, res: Response) => {
 
     res.end(await llmSearch(query));
 };
+
+export async function* startLangChainStream(
+    query: string,
+    collectionName: string = "robot-collection",
+): AsyncIterable<string> {
+    const currentVectorStore = new Chroma(embeddings, {
+        collectionName: collectionName,
+        url: process.env.CHROMA_DB,
+        collectionMetadata: { "hnsw:space": "cosine" },
+    });
+
+    // Search relevant documents
+    const retrievedDocs = await currentVectorStore.similaritySearch(query);
+
+    // Start LangChain-Stream
+    const eventStream = await ragChain.streamEvents(
+        {
+            question: query,
+            context: retrievedDocs,
+        },
+        {
+            version: "v2",
+            encoding: "text/event-stream",
+        },
+    );
+
+    // Iterate over event an return only text chunks
+    for await (const event of eventStream) {
+        // Optional: You can filter certain event types.
+        // Example: if (event.event === "on_chat_model_stream") { ... }
+        if (typeof event === "string") {
+            yield event;
+        } else if (
+            event && typeof event === "object" && "data" in event &&
+            typeof event.data === "string"
+        ) {
+            yield event.data;
+        } else {
+            // Fallback: to send all as stream
+            yield JSON.stringify(event);
+        }
+    }
+}
 // https://www.robinwieruch.de/langchain-javascript-stream-structured/
 export const streamAIResult = async (req: Request, res: Response) => {
     const { query } = req.body as { query: string };
@@ -32,7 +73,6 @@ export const streamAIResult = async (req: Request, res: Response) => {
     let eventStream = await ragChain.streamEvents({
         question: query,
         context: retrievedDocs,
-
     }, {
         version: "v2",
         encoding: "text/event-stream",
@@ -59,7 +99,7 @@ export const streamAIResult = async (req: Request, res: Response) => {
     //    console.error('Stream error:', err);
     //    res.status(500).send('Internal Server Error');
     //  });
-   
+
     const chunks = [];
     for await (const chunk of eventStream) {
         chunks.push(chunk);
@@ -97,10 +137,9 @@ const embeddings = new OpenAIEmbeddings({
 
 const vectorStore = new Chroma(embeddings, {
     collectionName: "robot-collection",
-    url: "http://192.168.0.223:8102",
+    url: process.env.CHROMA_DB, //"http://192.168.0.223:8102"
     collectionMetadata: { "hnsw:space": "cosine" },
 });
-
 
 // Retrieve and generate using the relevant snippets of the blog.
 //const retriever = vectorStore.asRetriever();
