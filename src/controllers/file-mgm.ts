@@ -311,15 +311,32 @@ export const uploadForRoom = async (
         mimeType: f.mimetype,
         relativePath: path.relative(UPLOAD_BASE, f.path),
     }));
-    
+
     const participantId = req.headers["participantId"]?.toString() ?? "";
+    
+    // Process subtitles from form data
+    let subtitlesArray: string[] = [];
+    if (req.body.subtitles) {
+        try {
+            subtitlesArray = JSON.parse(req.body.subtitles);
+            if (!Array.isArray(subtitlesArray)) {
+                subtitlesArray = [];
+            }
+        } catch (error) {
+            console.warn("Failed to parse subtitles:", error);
+            subtitlesArray = [];
+        }
+    }
 
     for (let i = 0; i < payload.length; i++) {
         try {
+            // Get subtitle for this file (can be empty string)
+            const subtitle = i < subtitlesArray.length ? subtitlesArray[i] || "" : "";
+            
             const fileMessage: ChatMessage = {
                 messageId: nanoid(9),
                 participantId: participantId,
-                text: "",
+                text: subtitle,
                 aiQueryContext: "",
                 timestamp: Date.now(),
                 type: convertMimeTypeToMessageType(
@@ -432,12 +449,29 @@ export const uploadForRoomStream = async (
         );
         const participantId = req.headers["participantId"]?.toString() ?? "";
 
+        // Process subtitles from form data
+        let subtitlesArray: string[] = [];
+        if (req.body.subtitles) {
+            try {
+                subtitlesArray = JSON.parse(req.body.subtitles);
+                if (!Array.isArray(subtitlesArray)) {
+                    subtitlesArray = [];
+                }
+            } catch (error) {
+                console.warn("Failed to parse subtitles:", error);
+                subtitlesArray = [];
+            }
+        }
+
         for (let i = 0; i < processedFiles.length; i++) {
             try {
+                // Get subtitle for this file (can be empty string)
+                const subtitle = i < subtitlesArray.length ? subtitlesArray[i] || "" : "";
+                
                 const fileMessage: ChatMessage = {
                     messageId: nanoid(9),
                     participantId: participantId,
-                    text: "",
+                    text: subtitle,
                     aiQueryContext: "",
                     timestamp: Date.now(),
                     type: convertMimeTypeToMessageType(
