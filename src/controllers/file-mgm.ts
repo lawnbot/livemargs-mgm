@@ -242,13 +242,13 @@ export const ensureParticipantIdHeaderAvailable = (
     res: Response,
     next: NextFunction,
 ): void => {
-    const participantId = req.headers["participantId"];
+    const participantId = req.headers["participantid"]; //HTTP2 is lower case!
 
     if (
         participantId == undefined || participantId == null ||
         participantId === ""
     ) {
-        next(new Error400BadRequest("Error participantId in header missing."));
+        next(new Error400BadRequest("Error participantid in header missing."));
     }
     next();
 };
@@ -312,7 +312,7 @@ export const uploadForRoom = async (
         relativePath: path.relative(UPLOAD_BASE, f.path),
     }));
 
-    const participantId = req.headers["participantId"]?.toString() ?? "";
+    const participantId = req.headers["participantid"]?.toString() ?? ""; // HTTP 2.0 is lower case!
     
     // Process subtitles from form data
     let subtitlesArray: string[] = [];
@@ -447,7 +447,7 @@ export const uploadForRoomStream = async (
                 }
             }),
         );
-        const participantId = req.headers["participantId"]?.toString() ?? "";
+        const participantId = req.headers["participantid"]?.toString() ?? "";
 
         // Process subtitles from form data
         let subtitlesArray: string[] = [];

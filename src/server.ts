@@ -3,8 +3,12 @@ import { v4 as uuidv4 } from "uuid";
 import dotenv from "dotenv";
 import express, { Application, NextFunction, Request, Response } from "express";
 import {
+  BaseHTTPError,
+  Error400BadRequest,
   Error401Unauthorized,
   Error403Forbidden,
+  Error404NotFound,
+  Error500InternalServerError,
 } from "./models/errors/custom-errors.js";
 import { routes } from "./routes/index.js";
 import cors from "cors";
@@ -534,16 +538,43 @@ function errorHandler(
   req: Request,
   res: Response,
   next: NextFunction,
-) {
-  if (err instanceof Error401Unauthorized) {
-    res.status(401).json({ error: err });
-  } else if (err instanceof Error403Forbidden) {
-    res.status(403).json({ error: err });
-  } else {
-    res.status(500).json({ error: err });
+): void {
+  console.error('Error occurred:', {
+    name: err.name,
+    message: err.message,
+    stack: err.stack,
+    url: req.url,
+    method: req.method,
+    timestamp: new Date().toISOString()
+  });
+
+  // Handle custom HTTP errors
+  if (err instanceof BaseHTTPError) {
+    res.status(err.statusCode).json({
+      error: {
+        name: err.name,
+        message: err.message,
+        statusCode: err.statusCode,
+        ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+      }
+    });
+    return;
   }
 
-  // res.status(500).json({ error: err });
+  // Handle other errors
+  const statusCode = 500;
+  const message = process.env.NODE_ENV === 'production' 
+    ? 'Internal Server Error' 
+    : err.message;
+
+  res.status(statusCode).json({
+    error: {
+      name: 'InternalServerError',
+      message: message,
+      statusCode: statusCode,
+      ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+    }
+  });
 }
 
 const expressServer = server.listen(PORT, async () => {
