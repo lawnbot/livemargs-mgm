@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Upload System Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .upload-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .file-input {
+            margin: 10px 0;
+        }
+        .upload-btn {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 5px 10px 0;
+        }
+        .upload-btn:hover {
+            background-color: #0056b3;
+        }
+        .stream-btn {
+            background-color: #28a745;
+        }
+        .stream-btn:hover {
+            background-color: #1e7e34;
+        }
+        .rag-btn {
+            background-color: #6f42c1;
+        }
+        .rag-btn:hover {
+            background-color: #5a32a3;
+        }
+        .list-btn {
+            background-color: #17a2b8;
+        }
+        .list-btn:hover {
+            background-color: #138496;
+        }
+        .result {
+            margin: 20px 0;
+            padding: 10px;
+            border-radius: 5px;
+            white-space: pre-wrap;
+        }
+        .success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .progress {
+            width: 100%;
+            height: 20px;
+            background-color: #f0f0f0;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .progress-bar {
+            height: 100%;
+            background-color: #007bff;
+            transition: width 0.3s ease;
+        }
+        .file-list {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 10px;
+            margin: 10px 0;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .file-item {
+            padding: 5px;
+            border-bottom: 1px solid #dee2e6;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .file-item:last-child {
+            border-bottom: none;
+        }
+        .download-btn {
+            background-color: #fd7e14;
+            color: white;
+            padding: 2px 8px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .download-btn:hover {
+            background-color: #e8650e;
+        }
+    </style>
+</head>
+<body>
+    <h1>File Upload System Test</h1>
+    
+    <div class="upload-section">
+        <h2>Room File Upload (Standard)</h2>
+        <p>Best for small to medium files (&lt; 100MB)</p>
+        <form id="standardForm">
+            <div class="file-input">
+                <label>Room Name:</label>
+                <input type="text" id="standardRoom" value="test_room" required>
+            </div>
+            <div class="file-input">
+                <label>Select Files:</label>
+                <input type="file" id="standardFiles" multiple required>
+            </div>
+            <button type="submit" class="upload-btn">Upload Standard</button>
+        </form>
+    </div>
+
+    <div class="upload-section">
+        <h2>Room File Upload (Stream)</h2>
+        <p>Best for large files (&gt; 100MB) - Efficient memory handling</p>
+        <form id="streamForm">
+            <div class="file-input">
+                <label>Room Name:</label>
+                <input type="text" id="streamRoom" value="test_room" required>
+            </div>
+            <div class="file-input">
+                <label>Select Files:</label>
+                <input type="file" id="streamFiles" multiple required>
+            </div>
+            <button type="submit" class="upload-btn stream-btn">Upload Stream</button>
+        </form>
+    </div>
+
+    <div class="upload-section">
+        <h2>RAG Collection Upload</h2>
+        <p>Upload documents for AI processing (requires authentication)</p>
+        <form id="ragForm">
+            <div class="file-input">
+                <label>Collection Name:</label>
+                <input type="text" id="ragCollection" value="test_collection" required>
+            </div>
+            <div class="file-input">
+                <label>JWT Token:</label>
+                <input type="text" id="ragToken" placeholder="Bearer token for authentication" required>
+            </div>
+            <div class="file-input">
+                <label>Select Files:</label>
+                <input type="file" id="ragFiles" multiple required>
+            </div>
+            <button type="submit" class="upload-btn rag-btn">Upload to RAG</button>
+        </form>
+    </div>
+
+    <div class="upload-section">
+        <h2>File Management</h2>
+        <div class="file-input">
+            <label>Room Name:</label>
+            <input type="text" id="listRoom" value="test_room" required>
+        </div>
+        <button type="button" class="upload-btn list-btn" onclick="listFiles()">List Files</button>
+        
+        <div id="fileList" class="file-list" style="display: none;"></div>
+    </div>
+
+    <div class="progress" id="progressContainer" style="display: none;">
+        <div class="progress-bar" id="progressBar"></div>
+    </div>
+
+    <div id="result"></div>
+
+    <script>
+        const API_BASE = 'http://localhost:3000'; // Adjust to your server URL
+
+        document.getElementById('standardForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const room = document.getElementById('standardRoom').value;
+            const files = document.getElementById('standardFiles').files;
+            await uploadFiles('/uploadRoomFiles/' + room, files, 'Standard Room Upload');
+        });
+
+        document.getElementById('streamForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const room = document.getElementById('streamRoom').value;
+            const files = document.getElementById('streamFiles').files;
+            await uploadFiles('/uploadRoomFilesStream/' + room, files, 'Stream Room Upload');
+        });
+
+        document.getElementById('ragForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const collection = document.getElementById('ragCollection').value;
+            const token = document.getElementById('ragToken').value;
+            const files = document.getElementById('ragFiles').files;
+            await uploadFiles('/uploadRagFiles/' + collection, files, 'RAG Collection Upload', token);
+        });
+
+        async function uploadFiles(endpoint, files, method, token = null) {
+            if (!files || files.length === 0) {
+                showResult('Please select files to upload', 'error');
+                return;
+            }
+
+            const formData = new FormData();
+            for (let file of files) {
+                formData.append('files', file);
+            }
+
+            showProgress();
+            const startTime = performance.now();
+
+            try {
+                const headers = {};
+                if (token) {
+                    headers['Authorization'] = `Bearer ${token}`;
+                }
+
+                const response = await fetch(API_BASE + endpoint, {
+                    method: 'POST',
+                    body: formData,
+                    headers: headers
+                });
+
+                const endTime = performance.now();
+                const uploadTime = ((endTime - startTime) / 1000).toFixed(2);
+
+                hideProgress();
+
+                if (response.ok) {
+                    const result = await response.json();
+                    const totalSize = result.files.reduce((sum, file) => sum + file.size, 0);
+                    const sizeInMB = (totalSize / (1024 * 1024)).toFixed(2);
+                    
+                    const targetName = result.room || result.collection || 'unknown';
+                    
+                    showResult(
+                        `${method} Success!
+Time: ${uploadTime}s
+Total Size: ${sizeInMB} MB
+Files Uploaded: ${result.uploaded}
+Target: ${targetName}
+
+Details:
+${JSON.stringify(result, null, 2)}`, 
+                        'success'
+                    );
+                } else {
+                    const error = await response.json();
+                    showResult(`${method} Error: ${error.error || 'Unknown error'}`, 'error');
+                }
+            } catch (error) {
+                hideProgress();
+                showResult(`${method} Network Error: ${error.message}`, 'error');
+            }
+        }
+
+        function showProgress() {
+            document.getElementById('progressContainer').style.display = 'block';
+            document.getElementById('progressBar').style.width = '0%';
+            
+            // Simulate progress (in real implementation, you'd track actual progress)
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += Math.random() * 10;
+                if (progress >= 90) {
+                    clearInterval(interval);
+                    progress = 90;
+                }
+                document.getElementById('progressBar').style.width = progress + '%';
+            }, 200);
+        }
+
+        function hideProgress() {
+            document.getElementById('progressContainer').style.display = 'none';
+        }
+
+        function showResult(message, type) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.textContent = message;
+            resultDiv.className = `result ${type}`;
+        }
+
+        // File listing functionality
+        async function listFiles() {
+            const room = document.getElementById('listRoom').value;
+            if (!room) {
+                showResult('Please enter a room name', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/listRoomFiles/${room}`);
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    displayFileList(result.files, room);
+                } else {
+                    const error = await response.json();
+                    showResult(`List Files Error: ${error.error || 'Unknown error'}`, 'error');
+                }
+            } catch (error) {
+                showResult(`Network Error: ${error.message}`, 'error');
+            }
+        }
+
+        function displayFileList(files, room) {
+            const fileListDiv = document.getElementById('fileList');
+            
+            if (!files || files.length === 0) {
+                fileListDiv.innerHTML = '<p>No files found in this room.</p>';
+                fileListDiv.style.display = 'block';
+                return;
+            }
+
+            let html = `<h4>Files in room "${room}" (${files.length} files):</h4>`;
+            files.forEach(file => {
+                const sizeInMB = (file.size / (1024 * 1024)).toFixed(2);
+                const lastModified = new Date(file.lastModified).toLocaleString();
+                
+                html += `
+                    <div class="file-item">
+                        <div>
+                            <strong>${file.name}</strong><br>
+                            <small>Size: ${sizeInMB} MB | Modified: ${lastModified}</small>
+                        </div>
+                        <button class="download-btn" onclick="downloadFile('${room}', '${file.name}')">
+                            Download
+                        </button>
+                    </div>
+                `;
+            });
+            
+            fileListDiv.innerHTML = html;
+            fileListDiv.style.display = 'block';
+        }
+
+        // File download functionality
+        async function downloadFile(room, filename) {
+            try {
+                const response = await fetch(`${API_BASE}/downloadFile/${room}/${encodeURIComponent(filename)}`);
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    
+                    showResult(`File "${filename}" downloaded successfully`, 'success');
+                } else {
+                    const error = await response.json();
+                    showResult(`Download Error: ${error.error || 'Unknown error'}`, 'error');
+                }
+            } catch (error) {
+                showResult(`Download Network Error: ${error.message}`, 'error');
+            }
+        }
+
+        // File size validation
+        function validateFileSize(files) {
+            const maxSize = 300 * 1024 * 1024; // 300MB
+            for (let file of files) {
+                if (file.size > maxSize) {
+                    showResult(`File "${file.name}" is too large. Maximum size is 300MB.`, 'error');
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        // Add file size validation to both forms
+        document.getElementById('standardFiles').addEventListener('change', (e) => {
+            validateFileSize(e.target.files);
+        });
+
+        document.getElementById('streamFiles').addEventListener('change', (e) => {
+            validateFileSize(e.target.files);
+        });
+
+        document.getElementById('ragFiles').addEventListener('change', (e) => {
+            validateFileSize(e.target.files);
+        });
+    </script>
+</body>
+</html>

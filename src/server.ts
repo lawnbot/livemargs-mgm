@@ -18,8 +18,6 @@ import {
   createAccessTokenForRoom,
   createRoom,
   getAllRooms,
-  getCustomerRooms,
-  setCustomerHeartbeat,
   setModeratorHeartbeat,
   updateRoomMetadata,
 } from "./controllers/livekit.js";
@@ -42,7 +40,7 @@ const wss = new WebSocketServer({
 const PORT = process.env.PORT || 3000;
 const portWS: string = process.env.PORT_WS ?? "3001";
 const PORT_WS = parseInt(portWS);
-const mongoDBService = new MongoDBService();
+export const mongoDBService = new MongoDBService();
 
 wss.on(
   "connection",

@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import {
     AccessToken,
+    DataPacket_Kind,
     ParticipantInfo,
     ParticipantPermission,
 } from "livekit-server-sdk";
@@ -18,6 +19,7 @@ import {
     waitingQueue,
 } from "../models/user-queue.js";
 import client from "../db/redisClient.js";
+import { ChatMessage } from "../models/chat-message.js";
 
 const livekitHost = process.env.LIVEKIT_HOST ?? "";
 const roomService = new RoomServiceClient(
@@ -101,6 +103,19 @@ export const getParticipantDetail = async (req: Request, res: Response) => {
     //const participant = await roomService.getParticipant(roomName, identity);
 
     //res.send(participant.toJsonString);
+};
+
+export const notifyRoomParticpantsAboutNewUpload = async (
+    roomName: string,
+    cm: ChatMessage,
+) => {
+    const strData = JSON.stringify({ chatMessage: cm, isChunk: false });
+    const encoder = new TextEncoder();
+    const data = encoder.encode(strData);
+
+    await roomService.sendData(roomName, data, DataPacket_Kind.RELIABLE, {
+        topic: "lm-chat",
+    });
 };
 
 export const updateParticipant = async (
