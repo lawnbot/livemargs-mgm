@@ -181,7 +181,7 @@ wss.on(
           const wsFb: WSFeedback = {
             fbStatus: FbStatus.Unauthorized,
             fbCommand: fbCommand,
-            originalCommand: "create-access-token-for-room",
+            originalCommand: "create-room-name",
             fbMessage: "Authentication for creating interal room failed.",
           };
           ws.send(JSON.stringify(wsFb));
@@ -427,6 +427,32 @@ wss.on(
         }
       }
 
+      if (command == "get-private-chat-rooms") {
+        const fbCommand: string = "fb-get-private-chat-rooms";
+        try {
+          const privateChatRooms = await mongoDBService
+            .getPrivateRoomsByUserIdentity(
+              user.identity,
+            );
+          const wsFb: WSFeedback = {
+            fbStatus: FbStatus.Okay,
+            originalCommand: "get-private-chat-rooms",
+            fbCommand: fbCommand,
+            fbMessage: "Could not get private chat rooms.",
+            fbData: JSON.stringify(privateChatRooms),
+          };
+          ws.send(JSON.stringify(wsFb));
+        } catch (e) {
+          const wsFb: WSFeedback = {
+            fbStatus: FbStatus.Error,
+            originalCommand: "get-private-chat-rooms",
+            fbCommand: fbCommand,
+            fbMessage: "Could not get private chat rooms.",
+          };
+          ws.send(JSON.stringify(wsFb));
+        }
+      }
+
       if (command == "stream-ai-query-to-participant") {
         interface MessageData {
           roomName: string;
@@ -539,13 +565,13 @@ function errorHandler(
   res: Response,
   next: NextFunction,
 ): void {
-  console.error('Error occurred:', {
+  console.error("Error occurred:", {
     name: err.name,
     message: err.message,
     stack: err.stack,
     url: req.url,
     method: req.method,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   });
 
   // Handle custom HTTP errors
@@ -555,25 +581,25 @@ function errorHandler(
         name: err.name,
         message: err.message,
         statusCode: err.statusCode,
-        ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
-      }
+        ...(process.env.NODE_ENV === "development" && { stack: err.stack }),
+      },
     });
     return;
   }
 
   // Handle other errors
   const statusCode = 500;
-  const message = process.env.NODE_ENV === 'production' 
-    ? 'Internal Server Error' 
+  const message = process.env.NODE_ENV === "production"
+    ? "Internal Server Error"
     : err.message;
 
   res.status(statusCode).json({
     error: {
-      name: 'InternalServerError',
+      name: "InternalServerError",
       message: message,
       statusCode: statusCode,
-      ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
-    }
+      ...(process.env.NODE_ENV === "development" && { stack: err.stack }),
+    },
   });
 }
 

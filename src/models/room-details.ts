@@ -5,10 +5,18 @@ export class RoomDetails {
         public productCategory: string,
         public requestingHelp: RequestingHelp = RequestingHelp.none,
         public requestingHelpSince: Date | undefined = undefined,
+        public roomName: string ="",
         public roomTitle: string = "",
         public ticketStatus: TicketStatus,
+        public belongingUserIdentity: string = "",
+        public privateRoom: boolean = false, // Whether to track history
     ) {
     }
+}
+
+export interface RoomDetailsSchema extends RoomDetails {
+    
+    expiresAt: Date;
 }
 
 // Channel: end-user & dealer, pure internal (for live meetings)

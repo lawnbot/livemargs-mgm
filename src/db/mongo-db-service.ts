@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 import { Collection, MongoClient } from "mongodb";
 import { ChatMessage, ChatMessageSchema } from "../models/chat-message.js";
+import { RoomDetails, RoomDetailsSchema } from "../models/room-details.js";
 
 dotenv.config();
 const MONGODB_URI = process.env.MONGODB_URI ||
@@ -11,12 +12,17 @@ const dbName: string = "livemargs";
 export class MongoDBService {
     private mongoClient: MongoClient;
     private chatMessageCollection: Collection<ChatMessageSchema>;
+    private chatRoomsCollection: Collection<RoomDetailsSchema>;
 
     constructor() {
         this.mongoClient = new MongoClient(MONGODB_URI);
         this.chatMessageCollection = this.mongoClient.db(dbName).collection<
             ChatMessageSchema
         >("chatMessages");
+
+        this.chatRoomsCollection = this.mongoClient.db(dbName).collection<
+            RoomDetailsSchema
+        >("chatRooms");
     }
 
     async connect(): Promise<void> {
@@ -54,6 +60,30 @@ export class MongoDBService {
             timestamp: 1,
         }).toArray();
     }
+
+    async savePrivateRoom(roomName: string, roomDetails: RoomDetails) {
+        const now = Date.now();
+        const ttlSeconds: number = 157788000; // Means 5 years
+        await this.chatRoomsCollection.insertOne({
+            ...roomDetails,
+            expiresAt: new Date(now + ttlSeconds * 1000),
+            roomName,
+        });
+    }
+
+
+    async getPrivateRoomsByUserIdentity(
+        userIdentity: string,
+    ): Promise<RoomDetailsSchema[]> {
+        // Field timestamp must exist. 1 is ascending. -1 decending
+        return await this.chatRoomsCollection.find({
+            belongingUserIdentity: userIdentity,
+            privateRoom: true,
+        }).sort({
+            timestamp: 1,
+        }).toArray();
+    }
+
     async close() {
         await this.mongoClient.close();
     }
