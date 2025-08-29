@@ -41,8 +41,20 @@ export async function* startLangChainStream(
         },
     );
 
+    const decoder = new TextDecoder();
+
     // Iterate over events and return only text chunks
-    for await (const event of eventStream) {
+    for await (const raw of eventStream) {
+        // Decode binary chunks first (Uint8Array/Buffer)
+        let event: any = raw;
+        if (raw instanceof Uint8Array || (typeof Buffer !== "undefined" && (Buffer as any).isBuffer?.(raw))) {
+            try {
+                event = decoder.decode(raw as Uint8Array);
+            } catch {
+                event = raw; // fallback
+            }
+        }
+
         // Plain string events
         if (typeof event === "string") {
             yield event;
