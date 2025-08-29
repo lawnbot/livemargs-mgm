@@ -26,11 +26,16 @@ export async function* startLangChainStream(
     // Search relevant documents
     const retrievedDocs = await currentVectorStore.similaritySearch(query);
 
+    // Extract only text content, not embeddings or metadata
+    const contextTexts = retrievedDocs.map((doc) =>
+        doc.pageContent || String(doc)
+    );
+
     // Start LangChain-Stream
     const eventStream = await ragChain.streamEvents(
         {
             question: query,
-            context: retrievedDocs,
+            context: contextTexts, // Pass only text content, not full documents
         },
         {
             version: "v2",
@@ -38,20 +43,51 @@ export async function* startLangChainStream(
         },
     );
 
-    // Iterate over event an return only text chunks
+    // Iterate over events and return only text chunks
     for await (const event of eventStream) {
-        // Optional: You can filter certain event types.
-        // Example: if (event.event === "on_chat_model_stream") { ... }
+        // Handle plain string events
         if (typeof event === "string") {
             yield event;
-        } else if (
-            event && typeof event === "object" && "data" in event &&
-            typeof event.data === "string"
-        ) {
-            yield event.data;
-        } else {
-            // Fallback: to send all as stream
-            yield JSON.stringify(event);
+            continue;
+        }
+
+        // Handle structured events
+        if (event && typeof event === "object") {
+            // Type guard for event objects
+            const eventObj = event as any;
+
+            // Filter for chat model streaming events
+            if (
+                eventObj.event === "on_chat_model_stream" &&
+                eventObj.data?.chunk?.content
+            ) {
+                yield eventObj.data.chunk.content;
+                continue;
+            }
+
+            // Handle other string data
+            if ("data" in eventObj && typeof eventObj.data === "string") {
+                // Try to parse if it's JSON with content
+                try {
+                    const parsed = JSON.parse(eventObj.data);
+                    if (parsed?.chunk?.content) {
+                        yield parsed.chunk.content;
+                        continue;
+                    }
+                } catch {
+                    // Not JSON, yield as-is if it's meaningful text
+                    if (
+                        eventObj.data.trim() && !eventObj.data.includes("[") &&
+                        !eventObj.data.includes("{")
+                    ) {
+                        yield eventObj.data;
+                    }
+                    continue;
+                }
+            }
+
+            // Skip events that likely contain vectors or metadata
+            // Don't yield JSON.stringify for complex objects
         }
     }
 }

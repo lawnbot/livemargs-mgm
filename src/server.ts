@@ -22,6 +22,7 @@ import {
   createAccessTokenForRoom,
   createRoom,
   getAllRooms,
+  sendChatMessageData,
   setModeratorHeartbeat,
   updateRoomMetadata,
 } from "./controllers/livekit.js";
@@ -430,10 +431,10 @@ wss.on(
       if (command == "get-private-chat-rooms") {
         const fbCommand: string = "fb-get-private-chat-rooms";
 
-        let authFailed = false;         
+        let authFailed = false;
 
-         const [blockAccess, jwtEmail] = getModeratorTokenPermission(user);
-          authFailed = blockAccess; // Is blocked means auth failed.
+        const [blockAccess, jwtEmail] = getModeratorTokenPermission(user);
+        authFailed = blockAccess; // Is blocked means auth failed.
 
         if (authFailed) {
           const wsFb: WSFeedback = {
@@ -474,6 +475,8 @@ wss.on(
         interface MessageData {
           roomName: string;
           query: string;
+          selectedAI: string | undefined;
+          privateAIResp: boolean;
         }
         const messageDataObj = messageData as MessageData;
         const roomName = messageDataObj.roomName;
@@ -481,19 +484,46 @@ wss.on(
         const fbCommand = "fb-stream-ai-query";
         const messageId = nanoid(9); // That flutter knows to which message add the chunk
         const chunks = [];
+
+        let collectionName: string = "robot-collection";
+        switch (messageDataObj.selectedAI) {
+          case "Robots":
+            collectionName = "robot-collection";
+            break;
+          case "OPE":
+            collectionName = "ope-collection";
+            break;
+          case "ERCO":
+            collectionName = "erco-collection";
+            break;
+          default:
+            collectionName = "robot-collection";
+            break;
+        }
+
         try {
-          const stream = await startLangChainStream(query);
+          const stream = await startLangChainStream(query, collectionName);
           for await (const chunk of stream) {
             chunks.push(chunk);
-            // Sende jeden Chunk sofort an den Client
-            const wsFb: WSFeedback = {
-              fbStatus: FbStatus.Okay,
-              originalCommand: "stream-ai-query-to-participant",
-              fbCommand: fbCommand,
-              fbMessage: "AI stream chunk",
-              fbData: JSON.stringify({ roomName, messageId, chunk }),
-            };
-            ws.send(JSON.stringify(wsFb));
+
+            await sendChatMessageData(roomName, {
+              messageId: messageId,
+              participantId: "ai",
+              text: chunks.join(),
+              aiQueryContext: "",
+              timestamp: Date.now(),
+              type: MessageType.Text,
+            }, true);
+
+            // // Sende jeden Chunk sofort an den Client
+            // const wsFb: WSFeedback = {
+            //   fbStatus: FbStatus.Okay,
+            //   originalCommand: "stream-ai-query-to-participant",
+            //   fbCommand: fbCommand,
+            //   fbMessage: "AI stream chunk",
+            //   fbData: JSON.stringify({ roomName, messageId, chunk }),
+            // };
+            // ws.send(JSON.stringify(wsFb));
           }
 
           const joinedMessage = chunks.join();
@@ -507,7 +537,7 @@ wss.on(
             type: MessageType.Text,
           });
 
-          // Send finish Event
+           // Send finish Event
           const wsFb: WSFeedback = {
             fbStatus: FbStatus.Okay,
             originalCommand: "stream-ai-query-to-participant",
@@ -520,6 +550,20 @@ wss.on(
               done: true,
             }),
           };
+
+          // // Send finish Event
+          // const wsFb: WSFeedback = {
+          //   fbStatus: FbStatus.Okay,
+          //   originalCommand: "stream-ai-query-to-participant",
+          //   fbCommand: fbCommand,
+          //   fbMessage: "AI stream finished",
+          //   fbData: JSON.stringify({
+          //     roomName,
+          //     messageId,
+          //     text: joinedMessage,
+          //     done: true,
+          //   }),
+          // };
 
           ws.send(JSON.stringify(wsFb));
         } catch (e) {

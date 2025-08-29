@@ -105,6 +105,20 @@ export const getParticipantDetail = async (req: Request, res: Response) => {
     //res.send(participant.toJsonString);
 };
 
+export const sendChatMessageData = async (
+    roomName: string,
+    cm: ChatMessage,
+    isChunk: boolean
+) => {
+    const strData = JSON.stringify({ chatMessage: cm, isChunk: isChunk });
+    const encoder = new TextEncoder();
+    const data = encoder.encode(strData);
+
+    await roomService.sendData(roomName, data, DataPacket_Kind.RELIABLE, {
+        topic: "lm-chat",
+    });
+};
+
 export const notifyRoomParticpantsAboutNewUpload = async (
     roomName: string,
     cm: ChatMessage,
