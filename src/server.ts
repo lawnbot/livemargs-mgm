@@ -429,27 +429,44 @@ wss.on(
 
       if (command == "get-private-chat-rooms") {
         const fbCommand: string = "fb-get-private-chat-rooms";
-        try {
-          const privateChatRooms = await mongoDBService
-            .getPrivateRoomsByUserIdentity(
-              user.identity,
-            );
+
+        let authFailed = false;         
+
+         const [blockAccess, jwtEmail] = getModeratorTokenPermission(user);
+          authFailed = blockAccess; // Is blocked means auth failed.
+
+        if (authFailed) {
           const wsFb: WSFeedback = {
-            fbStatus: FbStatus.Okay,
+            fbStatus: FbStatus.Unauthorized,
             originalCommand: "get-private-chat-rooms",
             fbCommand: fbCommand,
-            fbMessage: "Could not get private chat rooms.",
-            fbData: JSON.stringify(privateChatRooms),
+            fbMessage: "Moderator token missing or wrong.",
           };
+
           ws.send(JSON.stringify(wsFb));
-        } catch (e) {
-          const wsFb: WSFeedback = {
-            fbStatus: FbStatus.Error,
-            originalCommand: "get-private-chat-rooms",
-            fbCommand: fbCommand,
-            fbMessage: "Could not get private chat rooms.",
-          };
-          ws.send(JSON.stringify(wsFb));
+        } else {
+          try {
+            const privateChatRooms = await mongoDBService
+              .getPrivateRoomsByUserIdentity(
+                user.identity,
+              );
+            const wsFb: WSFeedback = {
+              fbStatus: FbStatus.Okay,
+              originalCommand: "get-private-chat-rooms",
+              fbCommand: fbCommand,
+              fbMessage: "Could get private chat rooms.",
+              fbData: JSON.stringify(privateChatRooms),
+            };
+            ws.send(JSON.stringify(wsFb));
+          } catch (e) {
+            const wsFb: WSFeedback = {
+              fbStatus: FbStatus.Error,
+              originalCommand: "get-private-chat-rooms",
+              fbCommand: fbCommand,
+              fbMessage: "Could not get private chat rooms.",
+            };
+            ws.send(JSON.stringify(wsFb));
+          }
         }
       }
 
