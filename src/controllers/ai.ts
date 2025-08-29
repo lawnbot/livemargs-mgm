@@ -26,16 +26,14 @@ export async function* startLangChainStream(
     // Search relevant documents
     const retrievedDocs = await currentVectorStore.similaritySearch(query);
 
-    // Extract only text content, not embeddings or metadata
-    const contextTexts = retrievedDocs.map((doc) =>
-        doc.pageContent || String(doc)
-    );
+    // Pass only plain text (avoid embedding vectors/metadata)
+    const contextTexts = retrievedDocs.map((d) => d.pageContent ?? String(d));
 
     // Start LangChain-Stream
     const eventStream = await ragChain.streamEvents(
         {
             question: query,
-            context: contextTexts, // Pass only text content, not full documents
+            context: contextTexts,
         },
         {
             version: "v2",
@@ -45,50 +43,41 @@ export async function* startLangChainStream(
 
     // Iterate over events and return only text chunks
     for await (const event of eventStream) {
-        // Handle plain string events
+        // Plain string events
         if (typeof event === "string") {
             yield event;
             continue;
         }
 
-        // Handle structured events
+        // Structured events
         if (event && typeof event === "object") {
-            // Type guard for event objects
-            const eventObj = event as any;
-
-            // Filter for chat model streaming events
-            if (
-                eventObj.event === "on_chat_model_stream" &&
-                eventObj.data?.chunk?.content
-            ) {
-                yield eventObj.data.chunk.content;
+            const e: any = event;
+            // Prefer chat model token events
+            if (e.event === "on_chat_model_stream" && typeof e.data?.chunk?.content === "string") {
+                yield e.data.chunk.content;
                 continue;
             }
-
-            // Handle other string data
-            if ("data" in eventObj && typeof eventObj.data === "string") {
-                // Try to parse if it's JSON with content
+            // Some implementations wrap data as string JSON
+            if (typeof e.data === "string") {
                 try {
-                    const parsed = JSON.parse(eventObj.data);
-                    if (parsed?.chunk?.content) {
+                    const parsed = JSON.parse(e.data);
+                    if (typeof parsed?.chunk?.content === "string") {
                         yield parsed.chunk.content;
                         continue;
                     }
                 } catch {
-                    // Not JSON, yield as-is if it's meaningful text
-                    if (
-                        eventObj.data.trim() && !eventObj.data.includes("[") &&
-                        !eventObj.data.includes("{")
-                    ) {
-                        yield eventObj.data;
+                    // If it's plain text (not a JSON/array dump), yield
+                    const s = e.data.trim();
+                    const looksLikeArray = s.startsWith("[") && s.endsWith("]");
+                    const looksLikeJSON = s.startsWith("{") && s.endsWith("}");
+                    if (!looksLikeArray && !looksLikeJSON) {
+                        yield s;
                     }
                     continue;
                 }
             }
-
-            // Skip events that likely contain vectors or metadata
-            // Don't yield JSON.stringify for complex objects
         }
+        // Skip all other non-text events (do not stringify objects to avoid vectors)
     }
 }
 // https://www.robinwieruch.de/langchain-javascript-stream-structured/
