@@ -509,7 +509,7 @@ wss.on(
             await sendChatMessageData(roomName, {
               messageId: messageId,
               participantId: "ai",
-              text: chunks.join(),
+              text: chunks.join(''),
               aiQueryContext: "",
               timestamp: Date.now(),
               type: MessageType.Text,

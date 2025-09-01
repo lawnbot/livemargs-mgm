@@ -37,24 +37,12 @@ export async function* startLangChainStream(
         },
         {
             version: "v2",
-            encoding: "text/event-stream",
+            // encoding: "text/event-stream", // Remove enconding to properly get it as event stream!!!!
         },
     );
 
-    const decoder = new TextDecoder();
-
     // Iterate over events and return only text chunks
-    for await (const raw of eventStream) {
-        // Decode binary chunks first (Uint8Array/Buffer)
-        let event: any = raw;
-        if (raw instanceof Uint8Array || (typeof Buffer !== "undefined" && (Buffer as any).isBuffer?.(raw))) {
-            try {
-                event = decoder.decode(raw as Uint8Array);
-            } catch {
-                event = raw; // fallback
-            }
-        }
-
+    for await (const event of eventStream) {
         // Plain string events
         if (typeof event === "string") {
             yield event;
@@ -65,7 +53,10 @@ export async function* startLangChainStream(
         if (event && typeof event === "object") {
             const e: any = event;
             // Prefer chat model token events
-            if (e.event === "on_chat_model_stream" && typeof e.data?.chunk?.content === "string") {
+            if (
+                e.event === "on_chat_model_stream" &&
+                typeof e.data?.chunk?.content === "string"
+            ) {
                 yield e.data.chunk.content;
                 continue;
             }
@@ -112,7 +103,7 @@ export const streamAIResult = async (req: Request, res: Response) => {
         context: retrievedDocs,
     }, {
         version: "v2",
-        encoding: "text/event-stream",
+        // encoding: "text/event-stream", // Remove enconding to properly get it as event stream!!!!
     });
 
     // for await (const { event, data } of eventStream) {
