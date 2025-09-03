@@ -313,55 +313,15 @@ export const uploadForRoom = async (
     }));
 
     const participantId = req.headers["participantid"]?.toString() ?? ""; // HTTP 2.0 is lower case!
-    
-    // Process subtitles from form data
-    let subtitlesArray: string[] = [];
-    if (req.body.subtitles) {
-        try {
-            subtitlesArray = JSON.parse(req.body.subtitles);
-            if (!Array.isArray(subtitlesArray)) {
-                subtitlesArray = [];
-            }
-        } catch (error) {
-            console.warn("Failed to parse subtitles:", error);
-            subtitlesArray = [];
-        }
-    }
 
-    for (let i = 0; i < payload.length; i++) {
-        try {
-            // Get subtitle for this file (can be empty string)
-            const subtitle = i < subtitlesArray.length ? subtitlesArray[i] || "" : "";
-            
-            const fileMessage: ChatMessage = {
-                messageId: nanoid(9),
-                participantId: participantId,
-                text: subtitle,
-                aiQueryContext: "",
-                timestamp: Date.now(),
-                type: convertMimeTypeToMessageType(
-                    payload[i].mimeType,
-                ),
-                fileName: payload[i].storedName,
-                fileSize: payload[i].size,
-            };
-            await mongoDBService.saveChatMessage(
-                req.params.room,
-                fileMessage,
-            );
-
-            // Notifiy room listeners
-            await notifyRoomParticpantsAboutNewUpload(
-                req.params.room,
-                fileMessage,
-            );
-        } catch (dbError) {
-            console.error(
-                "Failed to save file upload message to database:",
-                dbError,
-            );
-        }
-    }
+    // Process subtitles and save file messages
+    const subtitlesArray = parseSubtitles(req.body);
+    await processAndSaveFileMessages(
+        payload,
+        subtitlesArray,
+        participantId,
+        req.params.room,
+    );
 
     res.status(200).json({
         room,
@@ -449,54 +409,14 @@ export const uploadForRoomStream = async (
         );
         const participantId = req.headers["participantid"]?.toString() ?? "";
 
-        // Process subtitles from form data
-        let subtitlesArray: string[] = [];
-        if (req.body.subtitles) {
-            try {
-                subtitlesArray = JSON.parse(req.body.subtitles);
-                if (!Array.isArray(subtitlesArray)) {
-                    subtitlesArray = [];
-                }
-            } catch (error) {
-                console.warn("Failed to parse subtitles:", error);
-                subtitlesArray = [];
-            }
-        }
-
-        for (let i = 0; i < processedFiles.length; i++) {
-            try {
-                // Get subtitle for this file (can be empty string)
-                const subtitle = i < subtitlesArray.length ? subtitlesArray[i] || "" : "";
-                
-                const fileMessage: ChatMessage = {
-                    messageId: nanoid(9),
-                    participantId: participantId,
-                    text: subtitle,
-                    aiQueryContext: "",
-                    timestamp: Date.now(),
-                    type: convertMimeTypeToMessageType(
-                        processedFiles[i].mimeType,
-                    ),
-                    fileName: processedFiles[i].storedName,
-                    fileSize: processedFiles[i].size,
-                };
-                await mongoDBService.saveChatMessage(
-                    req.params.room,
-                    fileMessage,
-                );
-
-                // Notifiy room listeners
-                await notifyRoomParticpantsAboutNewUpload(
-                    req.params.room,
-                    fileMessage,
-                );
-            } catch (dbError) {
-                console.error(
-                    "Failed to save file upload message to database:",
-                    dbError,
-                );
-            }
-        }
+        // Process subtitles and save file messages
+        const subtitlesArray = parseSubtitles(req.body);
+        await processAndSaveFileMessages(
+            processedFiles,
+            subtitlesArray,
+            participantId,
+            req.params.room,
+        );
 
         res.status(200).json({
             room,
@@ -527,9 +447,17 @@ export const listFilesForRoom = async (
         const roomDir = path.join(UPLOAD_BASE, "rooms", room);
 
         // Check if room directory exists
+        // if (!fs.existsSync(roomDir)) {
+        //     res.status(404).json({ error: "Room not found" });
+        //     return;
+        // }
+        // Show empty folder also at no files.
         if (!fs.existsSync(roomDir)) {
-            res.status(404).json({ error: "Room not found" });
-            return;
+            res.status(200).json({
+                room,
+                fileCount: 0,
+                files: [],
+            });
         }
 
         // Read directory contents
@@ -645,3 +573,72 @@ export const downloadFileFromRoom = async (
         });
     }
 };
+
+// Helper function to parse subtitles from request body
+function parseSubtitles(requestBody: any): string[] {
+    let subtitlesArray: string[] = [];
+    if (requestBody.subtitles) {
+        try {
+            subtitlesArray = JSON.parse(requestBody.subtitles);
+            if (!Array.isArray(subtitlesArray)) {
+                subtitlesArray = [];
+            }
+        } catch (error) {
+            console.warn("Failed to parse subtitles:", error);
+            subtitlesArray = [];
+        }
+    }
+    return subtitlesArray;
+}
+
+// Helper function to process and save file messages with subtitles
+async function processAndSaveFileMessages(
+    files: Array<{
+        mimeType: string;
+        storedName: string;
+        size: number;
+    }>,
+    subtitlesArray: string[],
+    participantId: string,
+    room: string,
+): Promise<void> {
+    for (let i = 0; i < files.length; i++) {
+        try {
+            // Get subtitle for this file (can be empty string)
+            const subtitle = i < subtitlesArray.length
+                ? subtitlesArray[i] || ""
+                : "";
+
+            const fileMessage: ChatMessage = {
+                messageId: nanoid(9),
+                participantId: participantId,
+                text: subtitle,
+                aiQueryContext: "",
+                timestamp: Date.now(),
+                type: convertMimeTypeToMessageType(
+                    files[i].mimeType,
+                ),
+                fileName: files[i].storedName,
+                fileSize: files[i].size,
+            };
+
+            console.log("Saving file message to database:", fileMessage);
+            await mongoDBService.saveChatMessage(
+                room,
+                fileMessage,
+            );
+
+            // Notify room listeners if room exists
+            console.log("Notifiy Particpants");
+            await notifyRoomParticpantsAboutNewUpload(
+                room,
+                fileMessage,
+            );
+        } catch (dbError) {
+            console.error(
+                "Failed to save file upload message to database:",
+                dbError,
+            );
+        }
+    }
+}

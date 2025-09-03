@@ -28,6 +28,19 @@
       "envFile": "${workspaceFolder}/.env"
     },
     {
+      "type": "node",
+      "request": "launch",
+      "name": "Upload Test",
+      "program": "${workspaceFolder}/dist/partial/upload-test.js",
+      //"preLaunchTask": "tsc: build - tsconfig.json",
+      "preLaunchTask": "run tsc build",
+      //"outFiles": ["${workspaceFolder}/dist/**/*.js"],        
+      // //"runtimeArgs": ["-r", "ts-node/register"],
+      "cwd": "${workspaceFolder}",
+      "sourceMaps": true,        
+      "envFile": "${workspaceFolder}/.env"
+    },
+    {
       "name": "Launch via NPM",
       "type": "node",
       "request": "launch",

@@ -35,7 +35,7 @@ router.post(
     ensureParticipantIdHeaderAvailable,
     checkUploadRequiresAuth,
     preSanitizeCheck,
-    uploadStream.array("files"),
+    uploadStream.array("files"), // Support just one file per upload according tests.
     uploadForRoomStream,
 );
 

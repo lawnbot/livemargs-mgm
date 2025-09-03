@@ -108,7 +108,7 @@ export const getParticipantDetail = async (req: Request, res: Response) => {
 export const sendChatMessageData = async (
     roomName: string,
     cm: ChatMessage,
-    isChunk: boolean
+    isChunk: boolean,
 ) => {
     const strData = JSON.stringify({ chatMessage: cm, isChunk: isChunk });
     const encoder = new TextEncoder();
@@ -123,13 +123,46 @@ export const notifyRoomParticpantsAboutNewUpload = async (
     roomName: string,
     cm: ChatMessage,
 ) => {
-    const strData = JSON.stringify({ chatMessage: cm, isChunk: false });
-    const encoder = new TextEncoder();
-    const data = encoder.encode(strData);
+    try {
+        // Validate inputs
+        if (!roomName || !cm) {
+            console.error(
+                "Invalid parameters for notifyRoomParticpantsAboutNewUpload:",
+                {
+                    roomName,
+                    chatMessage: cm,
+                },
+            );
+            return;
+        }
 
-    await roomService.sendData(roomName, data, DataPacket_Kind.RELIABLE, {
-        topic: "lm-chat",
-    });
+        // Check if room exists
+        const rooms = await roomService.listRooms();
+        const roomExists = rooms.some((room) => room.name === roomName);
+
+        if (!roomExists) {
+            console.error(`Room ${roomName} does not exist`);
+            return;
+        }
+
+        const strData = JSON.stringify({ chatMessage: cm, isChunk: false });
+        const encoder = new TextEncoder();
+        const data = encoder.encode(strData);
+
+        await roomService.sendData(roomName, data, DataPacket_Kind.RELIABLE, {
+            topic: "lm-chat",
+        });
+
+        console.log(`Successfully sent chat message to room ${roomName}`);
+    } catch (error) {
+        console.error("Failed to notify room participants about new upload:", {
+            roomName,
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+            chatMessage: cm,
+        });
+        // Don't throw the error to prevent breaking the upload flow
+    }
 };
 
 export const updateParticipant = async (
