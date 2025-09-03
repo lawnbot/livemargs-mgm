@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
     checkUploadRequiresAuth,
+    downloadFileFromRAG,
     downloadFileFromRoom,
     ensureParticipantIdHeaderAvailable,
     listFilesForRoom,
@@ -63,6 +64,15 @@ router.post(
     preSanitizeCheckCollection,
     uploadRag.array("files"),
     uploadForRagCollection,
+);
+
+
+// Download a file from a room
+router.get(
+    "/downloadFileFromRag/:collection/:filename",
+    checkUploadRequiresAuth,
+    preSanitizeCheck,
+    downloadFileFromRAG,
 );
 
 

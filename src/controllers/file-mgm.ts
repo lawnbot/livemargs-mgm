@@ -574,6 +574,83 @@ export const downloadFileFromRoom = async (
     }
 };
 
+// Download a file from a room
+export const downloadFileFromRAG = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> => {
+    try {
+        const collection = sanitizeInput(req.params.collection);
+        const filename = req.params.filename;
+
+        if (!collection) {
+            res.status(400).json({ error: "Invalid collection" });
+            return;
+        }
+
+        if (!filename) {
+            res.status(400).json({ error: "Filename is required" });
+            return;
+        }
+
+        // Sanitize filename to prevent directory traversal
+        const sanitizedFilename = path.basename(filename);
+        const filePath = path.join(
+            UPLOAD_BASE,
+            "rag",
+            collection,
+            sanitizedFilename,
+        );
+
+        // Check if file exists
+        if (!fs.existsSync(filePath)) {
+            res.status(404).json({ error: "File not found" });
+            return;
+        }
+
+        // Verify the file is actually within the room directory (additional security)
+        const collectionDir = path.join(UPLOAD_BASE, "rag", collection);
+        const resolvedFilePath = path.resolve(filePath);
+        const resolvedcollectionDir = path.resolve(collectionDir);
+
+        if (!resolvedFilePath.startsWith(resolvedcollectionDir)) {
+            res.status(403).json({ error: "Access denied" });
+            return;
+        }
+
+        // Get file stats for headers
+        const stats = await fs.promises.stat(filePath);
+
+        // Set appropriate headers
+        res.setHeader(
+            "Content-Disposition",
+            `attachment; filename="${sanitizedFilename}"`,
+        );
+        res.setHeader("Content-Length", stats.size);
+        res.setHeader("Content-Type", "application/octet-stream");
+
+        // Stream the file to the response
+        const fileStream = fs.createReadStream(filePath);
+
+        fileStream.on("error", (error) => {
+            console.error("Error streaming file:", error);
+            if (!res.headersSent) {
+                res.status(500).json({ error: "Error reading file" });
+            }
+        });
+
+        fileStream.pipe(res);
+    } catch (error) {
+        const errorMessage = error instanceof Error
+            ? error.message
+            : "Unknown error";
+        res.status(500).json({
+            error: `Failed to download file: ${errorMessage}`,
+        });
+    }
+};
+
 // Helper function to parse subtitles from request body
 function parseSubtitles(requestBody: any): string[] {
     let subtitlesArray: string[] = [];

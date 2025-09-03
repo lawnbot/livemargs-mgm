@@ -161,32 +161,25 @@ export function authenticateTokenMiddleWare(
     const token = (authHeader && authHeader.split(" ")[1]) ?? "";
     //console.log("token: " + token);
 
-    if (token === "") next(new Error401Unauthorized("Token not valid"));
+    if (token === "") {
+        next(new Error401Unauthorized("Token not valid"));
+        return;
+    }
 
-    jwt.verify(token, process.env.JWT_SECRET!, (err, email) => {
-        if (err) return res.sendStatus(403);
-        req.email = email as string;
-        next();
-    });
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET!) as JwtPayload;
+        
+        if (decoded && typeof decoded === 'object' && 'email' in decoded) {
+            req.email = decoded.email as string;
+            next();
+        } else {
+            next(new Error401Unauthorized("Token not valid"));
+        }
+    } catch (err) {
+        next(new Error401Unauthorized("Token not valid"));
+    }
 }
 
-export const authenticateTokenMiddleWares = (
-    req: Request,
-    res: Response,
-    next: NextFunction,
-) => {
-    const authHeader = req.headers["authorization"];
-    const token = authHeader && authHeader.split(" ")[1];
-
-    if (token == null) return res.sendStatus(401);
-
-    jwt.verify(token, process.env.JWT_SECRET!, (err, email) => {
-        if (err) return res.sendStatus(403);
-        //req.user = {'s':'ss'};
-        req.email = email as string;
-        next();
-    });
-};
 export const testRoute = async (req: Request, res: Response) => {
     res.json({ "status": "accessed" });
 };
