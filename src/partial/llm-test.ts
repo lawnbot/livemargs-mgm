@@ -1,4 +1,4 @@
-import { startLangChainStream } from "./controllers/ai.js";
+import { startLangChainStream } from "../controllers/ai.js";
 
 const testResults = async () => {
     const chunks = [];

@@ -28,6 +28,11 @@ export async function* startLangChainStream(
 
     // Pass only plain text (avoid embedding vectors/metadata)
     const contextTexts = retrievedDocs.map((d) => d.pageContent ?? String(d));
+    // const contextTexts = retrievedDocs.map((d) => ({
+    //     content: d.pageContent ?? String(d),
+    //     metadata: d.metadata || {},
+    // }));
+    // Add finally context: contextTexts[0],
 
     // Start LangChain-Stream
     const eventStream = await ragChain.streamEvents(
