@@ -19,7 +19,7 @@ import {
     MessageType,
 } from "../models/chat-message.js";
 import { nanoid } from "nanoid";
-import { mongoDBService } from "../server.js";
+import { dbService } from "../server.js";
 import { notifyRoomParticpantsAboutNewUpload } from "./livekit.js";
 
 dotenv.config();
@@ -700,7 +700,7 @@ async function processAndSaveFileMessages(
             };
 
             console.log("Saving file message to database:", fileMessage);
-            await mongoDBService.saveChatMessage(
+            await dbService.saveChatMessage(
                 room,
                 fileMessage,
             );

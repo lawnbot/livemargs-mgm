@@ -31,8 +31,9 @@ import { FbStatus, WSFeedback } from "./models/ws-feedback.js";
 import { nanoid } from "nanoid";
 
 import { ChatMessage, MessageType } from "./models/chat-message.js";
-import { MongoDBService } from "./db/mongo-db-service.js";
+
 import { startLangChainStream } from "./controllers/ai.js";
+import { DatabaseFactory } from "./db/db-factory.js";
 
 // Initialize dotenv to load environment variables from .env file
 dotenv.config();
@@ -45,7 +46,8 @@ const wss = new WebSocketServer({
 const PORT = process.env.PORT || 3000;
 const portWS: string = process.env.PORT_WS ?? "3001";
 const PORT_WS = parseInt(portWS);
-export const mongoDBService = new MongoDBService();
+//export const mongoDBService = new MongoDBService();
+export const dbService = DatabaseFactory.createDatabaseService();
 
 wss.on(
   "connection",
@@ -379,7 +381,7 @@ wss.on(
         const chatMessage = messageDataObj.chatMessage;
         const fbCommand: string = "fb-saving-chat-message-for-room";
         try {
-          await mongoDBService.saveChatMessage(roomName, chatMessage);
+          await dbService.saveChatMessage(roomName, chatMessage);
           const wsFb: WSFeedback = {
             fbStatus: FbStatus.Okay,
             originalCommand: "save-chat-message-for-room",
@@ -406,7 +408,7 @@ wss.on(
 
         const fbCommand: string = "fb-get-chat-messages-for-room";
         try {
-          const chatMessages = await mongoDBService.getChatMessagesByRoom(
+          const chatMessages = await dbService.getChatMessagesByRoom(
             roomName,
           );
           const wsFb: WSFeedback = {
@@ -447,7 +449,7 @@ wss.on(
           ws.send(JSON.stringify(wsFb));
         } else {
           try {
-            const privateChatRooms = await mongoDBService
+            const privateChatRooms = await dbService
               .getPrivateRoomsByUserIdentity(
                 user.identity,
               );
@@ -528,7 +530,7 @@ wss.on(
 
           const joinedMessage = chunks.join();
           // Save AI message to let it see also other users once they join.
-          await mongoDBService.saveChatMessage(roomName, {
+          await dbService.saveChatMessage(roomName, {
             messageId: messageId,
             participantId: "ai",
             text: joinedMessage,
@@ -669,8 +671,8 @@ const expressServer = server.listen(PORT, async () => {
   console.log(
     "Redis DB Livekit Version " + await client.get("livekit_version"),
   );
-  await mongoDBService.connect();
-  console.log("MongoDb: ");
+  await dbService.connect();
+  
 });
 
 export { wss };
