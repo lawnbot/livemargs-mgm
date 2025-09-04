@@ -719,3 +719,189 @@ async function processAndSaveFileMessages(
         }
     }
 }
+
+
+// List android apk files for release and beta branch
+// List android apk files for release and beta branch
+export const listAndroidAPKs = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> => {
+    try {
+        const androidBaseDir = path.join(UPLOAD_BASE, "clients", "android");
+        
+        // Function to extract version from filename like "Livemargs_1.2.54.apk"
+        const extractVersionFromFilename = (filename: string): string | null => {
+            const match = filename.match(/Livemargs_(\d+\.\d+\.\d+)\.apk$/i);
+            return match ? match[1] : null;
+        };
+
+        // Function to scan a directory for APK files
+        const scanAPKDirectory = async (dirPath: string) => {
+            if (!fs.existsSync(dirPath)) {
+                return [];
+            }
+
+            const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+            const apkFiles = [];
+
+            for (const entry of entries) {
+                if (entry.isFile() && entry.name.toLowerCase().endsWith('.apk')) {
+                    const filePath = path.join(dirPath, entry.name);
+                    const stats = await fs.promises.stat(filePath);
+                    const version = extractVersionFromFilename(entry.name);
+
+                    apkFiles.push({
+                        fileName: entry.name,
+                        version: version || "unknown",
+                        createdDate: stats.birthtime,
+                        size: stats.size,
+                        lastModified: stats.mtime
+                    });
+                }
+            }
+
+            return apkFiles;
+        };
+
+        // Scan both release and beta directories
+        const releaseDir = path.join(androidBaseDir, "release");
+        const betaDir = path.join(androidBaseDir, "beta");
+
+        const [releaseAPKs, betaAPKs] = await Promise.all([
+            scanAPKDirectory(releaseDir),
+            scanAPKDirectory(betaDir)
+        ]);
+
+        // Sort by version (descending) - newest first
+        const sortByVersion = (a: any, b: any) => {
+            if (a.version === "unknown" && b.version === "unknown") return 0;
+            if (a.version === "unknown") return 1;
+            if (b.version === "unknown") return -1;
+            
+            // Simple version comparison (assumes semantic versioning)
+            const aVersion = a.version.split('.').map(Number);
+            const bVersion = b.version.split('.').map(Number);
+            
+            for (let i = 0; i < Math.max(aVersion.length, bVersion.length); i++) {
+                const aPart = aVersion[i] || 0;
+                const bPart = bVersion[i] || 0;
+                
+                if (aPart !== bPart) {
+                    return bPart - aPart; // Descending order
+                }
+            }
+            
+            return 0;
+        };
+
+        releaseAPKs.sort(sortByVersion);
+        betaAPKs.sort(sortByVersion);
+
+        const response = {
+            release: releaseAPKs,
+            beta: betaAPKs,
+            summary: {
+                totalReleaseAPKs: releaseAPKs.length,
+                totalBetaAPKs: betaAPKs.length,
+                latestRelease: releaseAPKs.length > 0 ? releaseAPKs[0].version : null,
+                latestBeta: betaAPKs.length > 0 ? betaAPKs[0].version : null
+            }
+        };
+
+        res.status(200).json(response);
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "Unknown error";
+        res.status(500).json({
+            error: `Failed to list Android APKs: ${errorMessage}`
+        });
+    }
+};
+
+
+
+// Download a specific APK file from android release or beta
+export const downloadAndroidAPK = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> => {
+    try {
+        const branch = req.params.branch; // 'release' or 'beta'
+        const filename = req.params.filename;
+
+        if (!branch || !['release', 'beta'].includes(branch)) {
+            res.status(400).json({ error: "Invalid branch. Must be 'release' or 'beta'" });
+            return;
+        }
+
+        if (!filename) {
+            res.status(400).json({ error: "Filename is required" });
+            return;
+        }
+
+        // Sanitize filename to prevent directory traversal
+        const sanitizedFilename = path.basename(filename);
+        
+        // Validate that it's an APK file
+        if (!sanitizedFilename.toLowerCase().endsWith('.apk')) {
+            res.status(400).json({ error: "Only APK files are allowed" });
+            return;
+        }
+
+        const filePath = path.join(
+            UPLOAD_BASE,
+            "clients",
+            "android",
+            branch,
+            sanitizedFilename,
+        );
+
+        // Check if file exists
+        if (!fs.existsSync(filePath)) {
+            res.status(404).json({ error: "APK file not found" });
+            return;
+        }
+
+        // Verify the file is actually within the android directory (additional security)
+        const androidDir = path.join(UPLOAD_BASE, "clients", "android", branch);
+        const resolvedFilePath = path.resolve(filePath);
+        const resolvedAndroidDir = path.resolve(androidDir);
+
+        if (!resolvedFilePath.startsWith(resolvedAndroidDir)) {
+            res.status(403).json({ error: "Access denied" });
+            return;
+        }
+
+        // Get file stats for headers
+        const stats = await fs.promises.stat(filePath);
+
+        // Set appropriate headers for APK download
+        res.setHeader(
+            "Content-Disposition",
+            `attachment; filename="${sanitizedFilename}"`,
+        );
+        res.setHeader("Content-Length", stats.size);
+        res.setHeader("Content-Type", "application/vnd.android.package-archive");
+
+        // Stream the file to the response
+        const fileStream = fs.createReadStream(filePath);
+
+        fileStream.on("error", (error) => {
+            console.error("Error streaming APK file:", error);
+            if (!res.headersSent) {
+                res.status(500).json({ error: "Error reading APK file" });
+            }
+        });
+
+        fileStream.pipe(res);
+    } catch (error) {
+        const errorMessage = error instanceof Error
+            ? error.message
+            : "Unknown error";
+        res.status(500).json({
+            error: `Failed to download APK: ${errorMessage}`,
+        });
+    }
+};

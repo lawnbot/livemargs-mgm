@@ -1,9 +1,11 @@
 import { Router } from "express";
 import {
     checkUploadRequiresAuth,
+    downloadAndroidAPK,
     downloadFileFromRAG,
     downloadFileFromRoom,
     ensureParticipantIdHeaderAvailable,
+    listAndroidAPKs,
     listFilesForRoom,
     preSanitizeCheck,
     preSanitizeCheckCollection,
@@ -28,7 +30,6 @@ router.post(
     upload.array("files"),
     uploadForRoom,
 );
-
 
 // Stream-based upload route for large files (memory storage + streaming)
 router.post(
@@ -56,7 +57,6 @@ router.get(
     downloadFileFromRoom,
 );
 
-
 // For RAG collection
 router.post(
     "/uploadRagFiles/:collection",
@@ -66,14 +66,24 @@ router.post(
     uploadForRagCollection,
 );
 
-
 // Download a file from a room
 router.get(
     "/downloadFileFromRag/:collection/:filename",
     checkUploadRequiresAuth,
-    preSanitizeCheck,
+    preSanitizeCheckCollection,
     downloadFileFromRAG,
 );
 
+// List Android .apk-Files for OTA-Updates
+router.get(
+    "/download/android",
+    listAndroidAPKs,
+);
+
+// Download Android .apk-Files for OTA-Updates
+router.get(
+    "/download/android/:branch/:filename",
+    downloadAndroidAPK,
+);
 
 export { router as fileManagementRoutes };
