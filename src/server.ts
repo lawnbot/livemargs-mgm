@@ -34,6 +34,7 @@ import { ChatMessage, MessageType } from "./models/chat-message.js";
 
 import { startLangChainStream } from "./controllers/ai.js";
 import { DatabaseFactory } from "./db/db-factory.js";
+import { startFolderBasedRAGTraining } from "./controllers/ai.js";
 
 // Initialize dotenv to load environment variables from .env file
 dotenv.config();
@@ -511,7 +512,7 @@ wss.on(
             await sendChatMessageData(roomName, {
               messageId: messageId,
               participantId: "ai",
-              text: chunks.join(''),
+              text: chunks.join(""),
               aiQueryContext: "",
               timestamp: Date.now(),
               type: MessageType.Text,
@@ -539,7 +540,7 @@ wss.on(
             type: MessageType.Text,
           });
 
-           // Send finish Event
+          // Send finish Event
           const wsFb: WSFeedback = {
             fbStatus: FbStatus.Okay,
             originalCommand: "stream-ai-query-to-participant",
@@ -576,6 +577,52 @@ wss.on(
             fbMessage: "AI stream failed",
           };
           ws.send(JSON.stringify(wsFb));
+        }
+      }
+      if (command == "start-retrain-rag") {
+        interface MessageData {
+          specificCollectionToTrain: string | undefined;
+          specificFileToTrain: string | undefined;
+        }
+        const messageDataObj = messageData as MessageData;
+        const fbCommand: string = "fb-start-retrain-rag";
+
+        let authFailed = false;
+
+        const [blockAccess, jwtEmail] = getModeratorTokenPermission(user);
+        authFailed = blockAccess; // Is blocked means auth failed.
+
+        if (authFailed) {
+          const wsFb: WSFeedback = {
+            fbStatus: FbStatus.Unauthorized,
+            originalCommand: "start-retrain-rag",
+            fbCommand: fbCommand,
+            fbMessage: "Moderator token missing or wrong.",
+          };
+
+          ws.send(JSON.stringify(wsFb));
+        } else {
+          try {
+            await startFolderBasedRAGTraining(
+              messageDataObj.specificCollectionToTrain,
+              messageDataObj.specificFileToTrain,
+            );
+            const wsFb: WSFeedback = {
+              fbStatus: FbStatus.Okay,
+              originalCommand: "start-retrain-rag",
+              fbCommand: fbCommand,
+              fbMessage: "Started trainig of data.",
+            };
+            ws.send(JSON.stringify(wsFb));
+          } catch (e) {
+            const wsFb: WSFeedback = {
+              fbStatus: FbStatus.Error,
+              originalCommand: "fb-start-retrain-rag",
+              fbCommand: fbCommand,
+              fbMessage: "AI stream failed",
+            };
+            ws.send(JSON.stringify(wsFb));
+          }
         }
       }
     });
@@ -672,7 +719,6 @@ const expressServer = server.listen(PORT, async () => {
     "Redis DB Livekit Version " + await client.get("livekit_version"),
   );
   await dbService.connect();
-  
 });
 
 export { wss };
