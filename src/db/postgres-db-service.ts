@@ -39,7 +39,7 @@ export class PostgresDBService {
         }
     }
 
-    private async createTables(client: PoolClient): Promise<void> {
+     private async createTables(client: PoolClient): Promise<void> {
         // Create chat_messages table
         await client.query(`
             CREATE TABLE IF NOT EXISTS chat_messages (
@@ -56,9 +56,7 @@ export class PostgresDBService {
                 edit_timestamp BIGINT,
                 room_name VARCHAR(255) NOT NULL,
                 expires_at TIMESTAMP NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                INDEX(room_name),
-                INDEX(expires_at)
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
 
@@ -77,24 +75,35 @@ export class PostgresDBService {
                 belonging_user_identity VARCHAR(255) DEFAULT '',
                 private_room BOOLEAN DEFAULT false,
                 expires_at TIMESTAMP NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                INDEX(belonging_user_identity),
-                INDEX(private_room),
-                INDEX(expires_at)
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
 
-        // Create indexes for automatic cleanup (similar to MongoDB TTL)
+        // Create indexes separately (PostgreSQL way)
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_chat_messages_room_name 
+            ON chat_messages(room_name)
+        `);
+
         await client.query(`
             CREATE INDEX IF NOT EXISTS idx_chat_messages_expires_at 
             ON chat_messages(expires_at)
         `);
 
         await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_chat_rooms_belonging_user_identity 
+            ON chat_rooms(belonging_user_identity)
+        `);
+
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_chat_rooms_private_room 
+            ON chat_rooms(private_room)
+        `);
+
+        await client.query(`
             CREATE INDEX IF NOT EXISTS idx_chat_rooms_expires_at 
             ON chat_rooms(expires_at)
         `);
-
         // Set up automatic cleanup job (PostgreSQL equivalent of MongoDB TTL)
         // This would typically be handled by a separate cron job or scheduled task
         // For now, we'll add a helper method to clean expired records
