@@ -3,3 +3,12 @@
 
 .env
 docker-compose.yml
+
+
+# Ignore RAG collection folders
+uploads/rag/*collection/
+uploads/rag/*collection
+
+# Ignore room content folders
+uploads/rooms/
+uploads/rooms

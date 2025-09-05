@@ -362,7 +362,7 @@ async function processCollection(
     try {
         const collectionPath = path.join(basePath, collectionFolder);
         console.log(
-            `Processing collection: ${collectionFolder} at ${collectionPath}`,
+            `🔄 Processing collection: ${collectionFolder} at ${collectionPath}`,
         );
 
         // Set up document loaders for different file types
@@ -381,7 +381,7 @@ async function processCollection(
             // Load specific file
             const filePath = path.join(collectionPath, specificFile);
             if (!fs.existsSync(filePath)) {
-                console.error(`Specific file not found: ${filePath}`);
+                console.error(`❌ Specific file not found: ${filePath}`);
                 return;
             }
 
@@ -390,14 +390,14 @@ async function processCollection(
                 loaderMap[fileExtension as keyof typeof loaderMap];
 
             if (!loaderFactory) {
-                console.error(`Unsupported file type: ${fileExtension}`);
+                console.error(`❌ Unsupported file type: ${fileExtension}`);
                 return;
             }
 
             const loader = loaderFactory(filePath);
             docs = await loader.load();
             console.log(
-                `Loaded specific file: ${specificFile} (${docs.length} documents)`,
+                `📄 Loaded specific file: ${specificFile} (${docs.length} documents)`,
             );
         } else {
             // Load all supported files in the collection directory
@@ -407,13 +407,13 @@ async function processCollection(
             );
             docs = await directoryLoader.load();
             console.log(
-                `Loaded ${docs.length} documents from collection: ${collectionFolder}`,
+                `📚 Loaded ${docs.length} documents from collection: ${collectionFolder}`,
             );
         }
 
         if (docs.length === 0) {
             console.log(
-                `No documents found in collection: ${collectionFolder}`,
+                `⚠️ No documents found in collection: ${collectionFolder}`,
             );
             return;
         }
@@ -425,7 +425,6 @@ async function processCollection(
                 index,
                 collectionFolder,
             );
-
             return new Document({
                 pageContent: doc.pageContent,
                 metadata: enhancedMetadata,
@@ -440,46 +439,125 @@ async function processCollection(
 
         const splitDocs = await textSplitter.splitDocuments(docsWithMetadata);
 
-        // Add chunk-specific metadata
-        const enhancedSplitDocs = splitDocs.map((doc, chunkIndex) => {
-            return new Document({
-                pageContent: doc.pageContent,
-                metadata: {
+        // CRITICAL: Sanitize and validate documents for Chroma
+        const validatedDocs = splitDocs
+            .map((doc, chunkIndex) => {
+                // Validate content
+                if (!doc.pageContent || doc.pageContent.trim().length === 0) {
+                    console.warn(
+                        `⚠️ Skipping empty document at chunk ${chunkIndex}`,
+                    );
+                    return null;
+                }
+
+                // Limit content length (Chroma has limits)
+                const maxContentLength = 8000;
+                let content = doc.pageContent;
+                if (content.length > maxContentLength) {
+                    console.warn(
+                        `✂️ Truncating long document from ${content.length} to ${maxContentLength} chars`,
+                    );
+                    content = content.substring(0, maxContentLength) + "...";
+                }
+
+                // Sanitize metadata for Chroma compatibility
+                const sanitizedMetadata = sanitizeMetadataForChroma({
                     ...doc.metadata,
                     chunk_id: chunkIndex,
-                    chunk_length: doc.pageContent.length,
-                    chunk_word_count: doc.pageContent.split(" ").length,
+                    chunk_length: content.length,
+                    chunk_word_count: content.split(" ").length,
                     processing_timestamp: new Date().toISOString(),
-                },
-            });
-        });
+                });
+
+                return new Document({
+                    pageContent: content,
+                    metadata: sanitizedMetadata,
+                });
+            })
+            .filter((doc): doc is Document => doc !== null);
+
+        if (validatedDocs.length === 0) {
+            console.error(
+                `❌ No valid documents after validation for collection: ${collectionFolder}`,
+            );
+            return;
+        }
 
         console.log(
-            `Created ${enhancedSplitDocs.length} chunks for collection: ${collectionFolder}`,
+            `✅ Validated ${validatedDocs.length}/${splitDocs.length} chunks for collection: ${collectionFolder}`,
         );
+
+        //await ensureCollectionExists(collectionFolder);
 
         // Create vector store for this collection
         const collectionVectorStore = new Chroma(embeddings, {
             collectionName: collectionFolder, // Use folder name as collection name
             url: process.env.CHROMA_DB,
+           
             collectionMetadata: { "hnsw:space": "cosine" },
         });
-
+       
         // Add documents to vector store
-        await collectionVectorStore.addDocuments(enhancedSplitDocs);
+        // await collectionVectorStore.addDocuments(splitDocs);
+        //await collectionVectorStore.addDocuments(enhancedSplitDocs);
+
+        console.log("🚀 Starting to add documents to Chroma...");
+
+        // Process in smaller batches to avoid overloading Chroma
+        const batchSize = 5;
+        let successCount = 0;
+
+        for (let i = 0; i < validatedDocs.length; i += batchSize) {
+            const batch = validatedDocs.slice(i, i + batchSize);
+            const batchNum = Math.floor(i / batchSize) + 1;
+            const totalBatches = Math.ceil(validatedDocs.length / batchSize);
+
+            try {
+                console.log(
+                    `📦 Processing batch ${batchNum}/${totalBatches} (${batch.length} docs)`,
+                );
+                await collectionVectorStore.addDocuments(batch);
+                successCount += batch.length;
+                console.log(`✅ Batch ${batchNum} added successfully`);
+            } catch (batchError) {
+                console.error(`❌ Error in batch ${batchNum}:`, batchError);
+
+                // Try individual documents in failed batch
+                for (let j = 0; j < batch.length; j++) {
+                    try {
+                        await collectionVectorStore.addDocuments([batch[j]]);
+                        successCount++;
+                        console.log(
+                            `✅ Individual document ${i + j + 1} added`,
+                        );
+                    } catch (docError) {
+                        console.error(
+                            `❌ Failed individual document ${i + j + 1}:`,
+                            docError,
+                        );
+                        console.error("Problematic document preview:", {
+                            contentLength: batch[j].pageContent.length,
+                            metadataKeys: Object.keys(batch[j].metadata),
+                            contentPreview:
+                                batch[j].pageContent.substring(0, 200) + "...",
+                        });
+                    }
+                }
+            }
+        }
 
         console.log(
-            `Successfully added ${enhancedSplitDocs.length} document chunks to collection: ${collectionFolder}`,
+            `🎉 Successfully added ${successCount}/${validatedDocs.length} document chunks to collection: ${collectionFolder}`,
         );
 
         // Log sample metadata for debugging
-        if (enhancedSplitDocs.length > 0) {
+        if (validatedDocs.length > 0) {
             console.log(
-                "Sample document metadata for collection",
+                "📋 Sample document metadata for collection",
                 collectionFolder,
                 ":",
-                enhancedSplitDocs[0].metadata,
             );
+            console.log(JSON.stringify(validatedDocs[0].metadata, null, 2));
         }
     } catch (error) {
         console.error(
@@ -488,6 +566,41 @@ async function processCollection(
         );
         throw error;
     }
+}
+
+// Helper function to sanitize metadata for Chroma
+function sanitizeMetadataForChroma(metadata: any): Record<string, any> {
+    const sanitized: Record<string, any> = {};
+
+    for (const [key, value] of Object.entries(metadata)) {
+        // Skip null/undefined values
+        if (value === null || value === undefined) continue;
+
+        // Convert to appropriate types
+        let sanitizedValue: any = value;
+
+        if (typeof value === "object" && value !== null) {
+            // Convert objects to strings
+            sanitizedValue = JSON.stringify(value);
+        } else if (typeof value === "string") {
+            // Limit string length
+            const maxLength = 500;
+            if (value.length > maxLength) {
+                sanitizedValue = value.substring(0, maxLength) + "...";
+            }
+            // Remove problematic characters
+            sanitizedValue = value.replace(/[\x00-\x1F\x7F]/g, "");
+        }
+
+        // Clean key name (Chroma is picky about field names)
+        const cleanKey = key.replace(/[^a-zA-Z0-9_]/g, "_");
+
+        if (cleanKey && sanitizedValue !== "") {
+            sanitized[cleanKey] = sanitizedValue;
+        }
+    }
+
+    return sanitized;
 }
 
 // Add collection management
@@ -508,6 +621,61 @@ export async function listAvailableCollections(): Promise<string[]> {
         .filter((entry) => entry.isDirectory())
         .map((entry) => entry.name);
 }
+
+export async function deleteChromaCollection(
+    collectionName: string,
+): Promise<void> {
+    try {
+        // Use Chroma client directly for collection deletion
+        const { ChromaClient } = await import("chromadb");
+        const client = new ChromaClient({
+            path: process.env.CHROMA_DB,
+        });
+
+        await client.deleteCollection({ name: collectionName });
+        console.log(`Successfully deleted collection: ${collectionName}`);
+    } catch (error) {
+        console.error(`Error deleting collection ${collectionName}:`, error);
+        throw error;
+    }
+}
+
+export async function clearChromaCollection(
+    collectionName: string,
+): Promise<void> {
+    try {
+        const vectorStore = new Chroma(embeddings, {
+            collectionName: collectionName,
+            url: process.env.CHROMA_DB,
+            collectionMetadata: { "hnsw:space": "cosine" },
+        });
+
+        // Delete all documents in the collection
+        await vectorStore.delete({});
+        console.log(`Successfully cleared collection: ${collectionName}`);
+    } catch (error) {
+        console.error(`Error clearing collection ${collectionName}:`, error);
+        throw error;
+    }
+}
+
+
+
+/* // List all collections in Chroma DB
+export async function listChromaCollections(): Promise<string[]> {
+    try {
+        const { ChromaClient } = await import("chromadb");
+        const client = new ChromaClient({
+            path: process.env.CHROMA_DB
+        });
+
+        const collections = await client.listCollections();
+        return collections.map(c => c.name);
+    } catch (error) {
+        console.error("Error listing Chroma collections:", error);
+        return [];
+    }
+} */
 
 /* export async function getCollectionStats(collectionName: string): Promise<{
     documentCount: number;
