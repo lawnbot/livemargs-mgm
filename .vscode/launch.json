@@ -31,7 +31,7 @@
       "type": "node",
       "request": "launch",
       "name": "Scrap Test",
-      "program": "${workspaceFolder}/dist/scrap-data.js",
+      "program": "${workspaceFolder}/dist/partial/scrap-data.js",
       //"preLaunchTask": "tsc: build - tsconfig.json",
       "preLaunchTask": "run tsc build",
       //"outFiles": ["${workspaceFolder}/dist/**/*.js"],        

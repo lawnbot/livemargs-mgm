@@ -11,8 +11,9 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node --env-file=.env dist/server.js",
     "start-chat": "node --env-file=.env dist/serverchat.js",
-    "start-scrap": "node --env-file=.env dist/scrap-data.js",
-    "start-llm-test": "node --env-file=.env dist/llm-test.js",
+    "train-rag": "node --env-file=.env dist/partial/scrap-data.js",
+    "db-test": "node --env-file=.env dist/partial/db-test.js",
+    "llm-test": "node --env-file=.env dist/partial/llm-test.js",
     "build": "tsc"
   },
   "keywords": [],

@@ -1,5 +1,5 @@
-import { startFolderBasedRAGTraining } from "./controllers/ai.js";
-import { deleteChromaCollection } from "./db/chroma-mgm.js";
+import { startFolderBasedRAGTraining } from "../controllers/ai.js";
+import { deleteChromaCollection } from "../db/chroma-mgm.js";
 
 console.log("Start Training");
 

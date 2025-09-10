@@ -4,7 +4,8 @@ const testResults = async () => {
     const chunks = [];
     try {
         const stream = await startLangChainStream(
-            "Warum fährt mein Roboter langsam?",
+            //"Warum fährt mein Roboter langsam?",
+            "Wie update ich die RTK-Basis?",
         );
         for await (const chunk of stream) {
             console.log(chunk);
@@ -13,6 +14,7 @@ const testResults = async () => {
 
         console.log("final: " + chunks.join(""));
     } catch (e) {
+        console.log('error',e);
     }
 };
 testResults();

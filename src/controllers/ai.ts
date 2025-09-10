@@ -37,6 +37,17 @@ export async function* startLangChainStream(
     // Search relevant documents
     const retrievedDocs = await currentVectorStore.similaritySearch(query);
 
+    // Debug: Log retrieved documents
+    // console.log(
+    //     `🔍 Retrieved ${retrievedDocs.length} documents from collection ${collectionName}`,
+    // );
+    // if (retrievedDocs.length > 0) {
+    //     console.log(
+    //         "📄 Sample document content:",
+    //         retrievedDocs[0].pageContent.substring(0, 200) + "...",
+    //     );
+    // }
+
     // Pass only plain text (avoid embedding vectors/metadata)
     const contextTexts = retrievedDocs.map((d) => d.pageContent ?? String(d));
     // const contextTexts = retrievedDocs.map((d) => ({
@@ -49,7 +60,7 @@ export async function* startLangChainStream(
     const eventStream = await ragChain.streamEvents(
         {
             question: query,
-            context: contextTexts,
+            context: retrievedDocs,
         },
         {
             version: "v2",
@@ -119,13 +130,17 @@ export const streamAIResult = async (req: Request, res: Response) => {
     });
 
     const retrievedDocs = await currentVectorStore.similaritySearch(query);
+    // Debug: Log retrieved documents
+    console.log(
+        `🔍 Retrieved ${retrievedDocs.length} documents for query: ${query}`,
+    );
 
+   
     let eventStream = await ragChain.streamEvents({
         question: query,
-        context: retrievedDocs,
+        context: retrievedDocs, // Document-Objects, nicht Strings!
     }, {
         version: "v2",
-        // encoding: "text/event-stream", // Remove enconding to properly get it as event stream!!!!
     });
 
     // for await (const { event, data } of eventStream) {
@@ -175,7 +190,7 @@ export const streamAIResult = async (req: Request, res: Response) => {
 const llm = new ChatOpenAI({
     //configuration: ClientOptions(),
     openAIApiKey: process.env.OPENAI_SECRET_KEY,
-    model: "gpt-5-nano", //"gpt-4",
+    model: "gpt-5-chat-latest",//"gpt-4", //"gpt-5-chat-latest", //"gpt-5-nano", //"gpt-4.1-mini", //"gpt-5-nano", //"gpt-4",
     //zero temperature means no extra creativity
     temperature: 0,
 });
@@ -493,10 +508,10 @@ async function processCollection(
         const collectionVectorStore = new Chroma(embeddings, {
             collectionName: collectionFolder, // Use folder name as collection name
             url: process.env.CHROMA_DB,
-           
+
             collectionMetadata: { "hnsw:space": "cosine" },
         });
-       
+
         // Add documents to vector store
         // await collectionVectorStore.addDocuments(splitDocs);
         //await collectionVectorStore.addDocuments(enhancedSplitDocs);
@@ -658,8 +673,6 @@ export async function clearChromaCollection(
         throw error;
     }
 }
-
-
 
 /* // List all collections in Chroma DB
 export async function listChromaCollections(): Promise<string[]> {
