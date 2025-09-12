@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 import { Pool, PoolClient } from "pg";
 import { ChatMessage, ChatMessageSchema } from "../models/chat-message.js";
 import { RoomDetails, RoomDetailsSchema } from "../models/room-details.js";
+import { RagSources } from "../models/rag-sources.js";
 
 // Initialize dotenv to load environment variables from .env file
 dotenv.config();
@@ -27,10 +28,10 @@ export class PostgresDBService {
     async connect(): Promise<void> {
         try {
             const client = await this.pool.connect();
-            
+
             // Create tables if they don't exist
             await this.createTables(client);
-            
+
             client.release();
             console.log("Connected to PostgreSQL database");
         } catch (e) {
@@ -39,7 +40,7 @@ export class PostgresDBService {
         }
     }
 
-     private async createTables(client: PoolClient): Promise<void> {
+    private async createTables(client: PoolClient): Promise<void> {
         // Create chat_messages table
         await client.query(`
             CREATE TABLE IF NOT EXISTS chat_messages (
@@ -56,7 +57,9 @@ export class PostgresDBService {
                 edit_timestamp BIGINT,
                 room_name VARCHAR(255) NOT NULL,
                 expires_at TIMESTAMP NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                -- For RAG support
+                rag_sources JSONB -- PostgreSQL JSONB for efficient JSON storage and querying
             )
         `);
 
@@ -90,6 +93,18 @@ export class PostgresDBService {
             ON chat_messages(expires_at)
         `);
 
+        // JSONB indexes for efficient RAG queries
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_chat_messages_rag_sources_gin 
+            ON chat_messages USING gin(rag_sources)
+        `);
+
+        // Specific index for collection name queries (flat format)
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_chat_messages_rag_collection_name 
+            ON chat_messages USING gin((rag_sources->>'collectionName'))
+        `);
+
         await client.query(`
             CREATE INDEX IF NOT EXISTS idx_chat_rooms_belonging_user_identity 
             ON chat_rooms(belonging_user_identity)
@@ -109,32 +124,39 @@ export class PostgresDBService {
         // For now, we'll add a helper method to clean expired records
     }
 
-    async saveChatMessage(roomName: string, chatMessage: ChatMessage): Promise<void> {
+    async saveChatMessage(
+        roomName: string,
+        chatMessage: ChatMessage,
+    ): Promise<void> {
         const now = Date.now();
         const ttlSeconds: number = 157788000; // 5 years
         const expiresAt = new Date(now + ttlSeconds * 1000);
 
+        const sanitizedChatMessage = ChatMessage.sanitize(chatMessage);
         const query = `
             INSERT INTO chat_messages (
                 message_id, participant_id, text, ai_query_context, 
                 media_uri, file_name, file_size, type, timestamp, 
-                edit_timestamp, room_name, expires_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                edit_timestamp, room_name, expires_at, rag_sources
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         `;
 
         const values = [
-            chatMessage.messageId,
-            chatMessage.participantId,
-            chatMessage.text,
-            chatMessage.aiQueryContext,
-            chatMessage.mediaUri || null,
-            chatMessage.fileName || null,
-            chatMessage.fileSize || null,
-            chatMessage.type,
-            chatMessage.timestamp,
-            chatMessage.editTimestamp || null,
+            sanitizedChatMessage.messageId,
+            sanitizedChatMessage.participantId,
+            sanitizedChatMessage.text,
+            sanitizedChatMessage.aiQueryContext,
+            sanitizedChatMessage.mediaUri || null,
+            sanitizedChatMessage.fileName || null,
+            sanitizedChatMessage.fileSize || null,
+            sanitizedChatMessage.type,
+            sanitizedChatMessage.timestamp,
+            sanitizedChatMessage.editTimestamp || null,
             roomName,
-            expiresAt
+            expiresAt,
+            sanitizedChatMessage.ragSources
+                ? JSON.stringify(sanitizedChatMessage.ragSources)
+                : null,
         ];
 
         try {
@@ -145,12 +167,14 @@ export class PostgresDBService {
         }
     }
 
-    async getChatMessagesByRoom(roomName: string): Promise<ChatMessageSchema[]> {
+    async getChatMessagesByRoom(
+        roomName: string,
+    ): Promise<ChatMessageSchema[]> {
         const query = `
             SELECT 
                 message_id, participant_id, text, ai_query_context,
                 media_uri, file_name, file_size, type, timestamp,
-                edit_timestamp, room_name, expires_at
+                edit_timestamp, room_name, expires_at, rag_sources
             FROM chat_messages 
             WHERE room_name = $1 AND expires_at > NOW()
             ORDER BY timestamp ASC
@@ -158,28 +182,122 @@ export class PostgresDBService {
 
         try {
             const result = await this.pool.query(query, [roomName]);
-            
-            return result.rows.map(row => ({
-                messageId: row.message_id,
-                participantId: row.participant_id,
-                text: row.text,
-                aiQueryContext: row.ai_query_context,
-                mediaUri: row.media_uri,
-                fileName: row.file_name,
-                fileSize: row.file_size,
-                type: row.type,
-                timestamp: row.timestamp,
-                editTimestamp: row.edit_timestamp,
-                roomName: row.room_name,
-                expiresAt: row.expires_at
-            }));
+
+            return result.rows.map((row) => {
+                const baseMessage = {
+                    messageId: row.message_id,
+                    participantId: row.participant_id,
+                    text: row.text,
+                    aiQueryContext: row.ai_query_context,
+                    mediaUri: row.media_uri,
+                    fileName: row.file_name,
+                    fileSize: row.file_size,
+                    type: row.type,
+                    timestamp: row.timestamp,
+                    editTimestamp: row.edit_timestamp,
+                    roomName: row.room_name,
+                    expiresAt: row.expires_at,
+                    ragSources: row.rag_sources
+                        ? JSON.parse(row.rag_sources) as RagSources
+                        : undefined,
+                };
+
+                return ChatMessage.sanitize(baseMessage) as ChatMessageSchema;
+            });
         } catch (error) {
             console.error("Error getting chat messages:", error);
             throw error;
         }
     }
 
-    async savePrivateRoom(roomName: string, roomDetails: RoomDetails): Promise<void> {
+    async getMessagesByRagCollection(
+        roomName: string,
+        collectionName: string,
+    ): Promise<ChatMessageSchema[]> {
+        const query = `
+            SELECT 
+                message_id, participant_id, text, ai_query_context,
+                media_uri, file_name, file_size, type, timestamp,
+                edit_timestamp, room_name, expires_at, rag_sources
+            FROM chat_messages 
+            WHERE room_name = $1 
+                AND rag_sources->>'collectionName' = $2
+                AND expires_at > NOW()
+            ORDER BY timestamp ASC
+        `;
+
+        try {
+            const result = await this.pool.query(query, [
+                roomName,
+                collectionName,
+            ]);
+
+            return result.rows.map((row) => {
+                const baseMessage = {
+                    messageId: row.message_id,
+                    participantId: row.participant_id,
+                    text: row.text,
+                    aiQueryContext: row.ai_query_context,
+                    mediaUri: row.media_uri,
+                    fileName: row.file_name,
+                    fileSize: row.file_size,
+                    type: row.type,
+                    timestamp: row.timestamp,
+                    editTimestamp: row.edit_timestamp,
+                    roomName: row.room_name,
+                    expiresAt: row.expires_at,
+                    ragSources: JSON.parse(row.rag_sources) as RagSources,
+                };
+
+                return ChatMessage.sanitize(baseMessage) as ChatMessageSchema;
+            });
+        } catch (error) {
+            console.error("Error getting messages by RAG collection:", error);
+            throw error;
+        }
+    }
+
+    // New method: Get RAG statistics for a room
+    async getRagStatistics(roomName: string): Promise<{
+        totalMessagesWithRag: number;
+        uniqueCollections: string[];
+        uniqueSourceFiles: string[];
+    }> {
+        const query = `
+            SELECT 
+                COUNT(*) as total_messages_with_rag,
+                array_agg(DISTINCT rag_sources->>'collectionName') as unique_collections,
+                array_agg(DISTINCT source_filename) as unique_source_files
+            FROM chat_messages,
+                 jsonb_array_elements(rag_sources->'sources') as source,
+                 jsonb_extract_path_text(source, 'filename') as source_filename
+            WHERE room_name = $1 
+                AND rag_sources IS NOT NULL
+                AND expires_at > NOW()
+        `;
+
+        try {
+            const result = await this.pool.query(query, [roomName]);
+            const row = result.rows[0];
+
+            return {
+                totalMessagesWithRag: parseInt(row.total_messages_with_rag) ||
+                    0,
+                uniqueCollections: row.unique_collections?.filter(Boolean) ||
+                    [],
+                uniqueSourceFiles: row.unique_source_files?.filter(Boolean) ||
+                    [],
+            };
+        } catch (error) {
+            console.error("Error getting RAG statistics:", error);
+            throw error;
+        }
+    }
+
+    async savePrivateRoom(
+        roomName: string,
+        roomDetails: RoomDetails,
+    ): Promise<void> {
         const now = Date.now();
         const ttlSeconds: number = 157788000; // 5 years
         const expiresAt = new Date(now + ttlSeconds * 1000);
@@ -203,7 +321,7 @@ export class PostgresDBService {
             roomDetails.ticketStatus,
             roomDetails.belongingUserIdentity,
             roomDetails.privateRoom,
-            expiresAt
+            expiresAt,
         ];
 
         try {
@@ -214,7 +332,9 @@ export class PostgresDBService {
         }
     }
 
-    async getPrivateRoomsByUserIdentity(userIdentity: string): Promise<RoomDetailsSchema[]> {
+    async getPrivateRoomsByUserIdentity(
+        userIdentity: string,
+    ): Promise<RoomDetailsSchema[]> {
         const query = `
             SELECT 
                 room_name, channel, department, product_category,
@@ -229,8 +349,8 @@ export class PostgresDBService {
 
         try {
             const result = await this.pool.query(query, [userIdentity]);
-            
-            return result.rows.map(row => ({
+
+            return result.rows.map((row) => ({
                 channel: row.channel,
                 department: row.department,
                 productCategory: row.product_category,
@@ -241,7 +361,7 @@ export class PostgresDBService {
                 ticketStatus: row.ticket_status,
                 belongingUserIdentity: row.belonging_user_identity,
                 privateRoom: row.private_room,
-                expiresAt: row.expires_at
+                expiresAt: row.expires_at,
             }));
         } catch (error) {
             console.error("Error getting private rooms:", error);
@@ -257,16 +377,20 @@ export class PostgresDBService {
         try {
             // Clean up expired chat messages
             const chatMessagesResult = await this.pool.query(
-                "DELETE FROM chat_messages WHERE expires_at <= NOW()"
-            );
-            
-            // Clean up expired chat rooms
-            const chatRoomsResult = await this.pool.query(
-                "DELETE FROM chat_rooms WHERE expires_at <= NOW()"
+                "DELETE FROM chat_messages WHERE expires_at <= NOW()",
             );
 
-            console.log(`Cleaned up ${chatMessagesResult.rowCount} expired chat messages`);
-            console.log(`Cleaned up ${chatRoomsResult.rowCount} expired chat rooms`);
+            // Clean up expired chat rooms
+            const chatRoomsResult = await this.pool.query(
+                "DELETE FROM chat_rooms WHERE expires_at <= NOW()",
+            );
+
+            console.log(
+                `Cleaned up ${chatMessagesResult.rowCount} expired chat messages`,
+            );
+            console.log(
+                `Cleaned up ${chatRoomsResult.rowCount} expired chat rooms`,
+            );
         } catch (error) {
             console.error("Error cleaning up expired records:", error);
             throw error;
@@ -285,7 +409,7 @@ export class PostgresDBService {
         return {
             totalCount: this.pool.totalCount,
             idleCount: this.pool.idleCount,
-            waitingCount: this.pool.waitingCount
+            waitingCount: this.pool.waitingCount,
         };
     }
 }

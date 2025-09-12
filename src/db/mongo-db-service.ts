@@ -28,15 +28,32 @@ export class MongoDBService {
     async connect(): Promise<void> {
         try {
             await this.mongoClient.connect();
+
+            // Create indexes for better query performance
+            await this.chatMessageCollection.createIndex({
+                roomName: 1,
+                timestamp: 1,
+            });
             // Ensure TTL index exists
             await this.chatMessageCollection.createIndex({ expiresAt: 1 }, {
                 expireAfterSeconds: 0,
             });
-            /*
+                        /*
             MongoDB löscht Dokumente nicht sofort, sondern in regelmäßigen Intervallen (ca. alle 60 Sekunden).
             Das Feld expiresAt muss ein Datumstyp (Date) sein.
             TTL-Index funktioniert nur auf einem Feld pro Collection.
             */
+            // Index for RAG sources queries (flat format)
+            await this.chatMessageCollection.createIndex({
+                "ragSources.collectionName": 1,
+            });
+
+            // Index for RAG source filenames
+            await this.chatMessageCollection.createIndex({
+                "ragSources.sources.filename": 1,
+            });
+
+
         } catch (e) {
             console.log("Could not connect to Mongo DB: " + e);
         }
@@ -45,8 +62,16 @@ export class MongoDBService {
     async saveChatMessage(roomName: string, chatMessage: ChatMessage) {
         const now = Date.now();
         const ttlSeconds: number = 157788000; // Means 5 years
+
+        // Typescript Interfaces but also classes have no lifetime safety as they are removed from the code at lifetime.
+        // Somone could send a lifetime wrong data. To be safe it is better santize.
+        const sanitizedChatMessage = ChatMessage.sanitize(chatMessage);
+        if (!ChatMessage.isValid(sanitizedChatMessage)) {
+            throw new Error("Invalid ChatMessage format");
+        }
+
         await this.chatMessageCollection.insertOne({
-            ...chatMessage,
+            ...sanitizedChatMessage,
             expiresAt: new Date(now + ttlSeconds * 1000),
             roomName,
         });
@@ -56,7 +81,10 @@ export class MongoDBService {
         roomName: string,
     ): Promise<ChatMessageSchema[]> {
         // Field timestamp must exist. 1 is ascending. -1 decending
-        return await this.chatMessageCollection.find({ roomName }).sort({
+        return await this.chatMessageCollection.find({
+            roomName,
+            expiresAt: { $gt: new Date() }, // Filter expired messages
+        }).sort({
             timestamp: 1,
         }).toArray();
     }
@@ -70,7 +98,6 @@ export class MongoDBService {
             roomName,
         });
     }
-
 
     async getPrivateRoomsByUserIdentity(
         userIdentity: string,

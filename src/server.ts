@@ -35,6 +35,7 @@ import { ChatMessage, MessageType } from "./models/chat-message.js";
 import { startLangChainStream } from "./controllers/ai.js";
 import { DatabaseFactory } from "./db/db-factory.js";
 import { startFolderBasedRAGTraining } from "./controllers/ai.js";
+import { RagSources } from "./models/rag-sources.js";
 
 // Initialize dotenv to load environment variables from .env file
 dotenv.config();
@@ -505,17 +506,35 @@ wss.on(
         }
 
         try {
+          let ragSources: RagSources | undefined;
+          let joinedMessage = "";
           const stream = await startLangChainStream(query, collectionName);
           for await (const chunk of stream) {
-            chunks.push(chunk);
+            if (typeof chunk === "string") {
+              chunks.push(chunk);
+            } else if (
+              chunk &&
+              typeof chunk === "object" &&
+              "metadataType" in chunk &&
+              chunk.metadataType === "rag-sources"
+            ) {
+              ragSources = chunk as RagSources;
+              // console.log(
+              //   `📚 RAG Sources: ${ragSources.data.sources.length} documents`,
+              // );
+            } else {
+              console.warn("⚠️ Unexpected chunk type from AI Stream:", chunk);
+            }
+            joinedMessage = chunks.join("");
 
             await sendChatMessageData(roomName, {
               messageId: messageId,
               participantId: "ai",
-              text: chunks.join(""),
+              text: joinedMessage,
               aiQueryContext: "",
               timestamp: Date.now(),
               type: MessageType.Text,
+              ragSources: ragSources,
             }, true);
 
             // // Sende jeden Chunk sofort an den Client
@@ -529,7 +548,6 @@ wss.on(
             // ws.send(JSON.stringify(wsFb));
           }
 
-          const joinedMessage = chunks.join();
           // Save AI message to let it see also other users once they join.
           await dbService.saveChatMessage(roomName, {
             messageId: messageId,
@@ -538,6 +556,7 @@ wss.on(
             aiQueryContext: "",
             timestamp: Date.now(),
             type: MessageType.Text,
+            ragSources: ragSources,
           });
 
           // Send finish Event

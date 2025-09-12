@@ -15,6 +15,7 @@ import { TextLoader } from "langchain/document_loaders/fs/text";
 import { SRTLoader } from "@langchain/community/document_loaders/fs/srt";
 import * as path from "path";
 import * as fs from "fs";
+import { RagSources } from "../models/rag-sources.js";
 
 export const getAIResult = async (req: Request, res: Response) => {
     const { query } = req.body as { query: string };
@@ -27,7 +28,7 @@ export const getAIResult = async (req: Request, res: Response) => {
 export async function* startLangChainStream(
     query: string,
     collectionName: string = "robot-collection",
-): AsyncIterable<string> {
+): AsyncIterable<string | RagSources> {
     const currentVectorStore = new Chroma(embeddings, {
         collectionName: collectionName,
         url: process.env.CHROMA_DB,
@@ -35,7 +36,9 @@ export async function* startLangChainStream(
     });
 
     // Search relevant documents
-    const retrievedDocs = await currentVectorStore.similaritySearch(query);
+    const retrievedDocsWithScores = await currentVectorStore
+        .similaritySearchWithScore(query, 4);
+    const retrievedDocs = retrievedDocsWithScores.map(([doc, score]) => doc);
 
     // Debug: Log retrieved documents
     // console.log(
@@ -48,8 +51,6 @@ export async function* startLangChainStream(
     //     );
     // }
 
-    // Pass only plain text (avoid embedding vectors/metadata)
-    const contextTexts = retrievedDocs.map((d) => d.pageContent ?? String(d));
     // const contextTexts = retrievedDocs.map((d) => ({
     //     content: d.pageContent ?? String(d),
     //     metadata: d.metadata || {},
@@ -109,6 +110,30 @@ export async function* startLangChainStream(
         }
         // Skip all other non-text events (do not stringify objects to avoid vectors)
     }
+    // Send sources as typed JSON object
+    if (retrievedDocsWithScores.length > 0) {
+        const sourcesEvent: RagSources = {
+            metadataType: "rag-sources",
+
+            sources: retrievedDocsWithScores.map(([doc, score], index) => ({
+                id: index + 1,
+                filename: doc.metadata?.filename ||
+                    path.basename(doc.metadata?.source) ||
+                    "",
+                page: doc.metadata?.page || doc.metadata?.page_number,
+                collection: doc.metadata?.collection_name || collectionName,
+                relevanceScore: Math.round(score * 1000) / 1000,
+                preview: createSafePreview(doc.pageContent, 150),
+                wordCount: doc.pageContent.split(" ").length,
+                fileType: doc.metadata?.file_extension || "",
+                chunkId: doc.metadata?.chunk_id || index,
+            })),
+            query: query,
+            collectionName: collectionName,
+        };
+
+        yield sourcesEvent;
+    }
 }
 // https://www.robinwieruch.de/langchain-javascript-stream-structured/
 export const streamAIResult = async (req: Request, res: Response) => {
@@ -135,7 +160,6 @@ export const streamAIResult = async (req: Request, res: Response) => {
         `🔍 Retrieved ${retrievedDocs.length} documents for query: ${query}`,
     );
 
-   
     let eventStream = await ragChain.streamEvents({
         question: query,
         context: retrievedDocs, // Document-Objects, nicht Strings!
@@ -190,7 +214,7 @@ export const streamAIResult = async (req: Request, res: Response) => {
 const llm = new ChatOpenAI({
     //configuration: ClientOptions(),
     openAIApiKey: process.env.OPENAI_SECRET_KEY,
-    model: "gpt-5-chat-latest",//"gpt-4", //"gpt-5-chat-latest", //"gpt-5-nano", //"gpt-4.1-mini", //"gpt-5-nano", //"gpt-4",
+    model: "gpt-5-chat-latest", //"gpt-4", //"gpt-5-chat-latest", //"gpt-5-nano", //"gpt-4.1-mini", //"gpt-5-nano", //"gpt-4",
     //zero temperature means no extra creativity
     temperature: 0,
 });
@@ -673,7 +697,18 @@ export async function clearChromaCollection(
         throw error;
     }
 }
+// Helper function to create safe preview
+function createSafePreview(content: string, maxLength: number = 150): string {
+    if (!content) return "";
 
+    const cleanContent = content.replace(/\n/g, " ").trim();
+
+    if (cleanContent.length <= maxLength) {
+        return cleanContent;
+    }
+
+    return cleanContent.substring(0, maxLength) + "...";
+}
 /* // List all collections in Chroma DB
 export async function listChromaCollections(): Promise<string[]> {
     try {

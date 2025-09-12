@@ -1,3 +1,5 @@
+import { RagSources } from "./rag-sources.js";
+
 export interface ChatMessage {
     messageId: string;
     participantId: string;
@@ -7,6 +9,7 @@ export interface ChatMessage {
     fileName?: string;
     fileSize?: number;
     type: MessageType;
+    ragSources?: RagSources;
     timestamp: number;
     editTimestamp?: number;
 }
@@ -70,3 +73,54 @@ export function convertMimeTypeToMessageType(mimeType: string): MessageType {
     fileSize?: number;
 }
  */
+
+export namespace ChatMessage {
+    export function sanitize(obj: any): ChatMessage {
+        return {
+            messageId: String(obj.messageId),
+            participantId: String(obj.participantId),
+            text: String(obj.text),
+            aiQueryContext: String(obj.aiQueryContext),
+            mediaUri: obj.mediaUri ? String(obj.mediaUri) : undefined,
+            fileName: obj.fileName ? String(obj.fileName) : undefined,
+            fileSize: obj.fileSize ? Number(obj.fileSize) : undefined,
+            type: obj.type as MessageType,
+            timestamp: Number(obj.timestamp),
+            editTimestamp: obj.editTimestamp ? Number(obj.editTimestamp) : undefined,
+            ragSources: obj.ragSources ? sanitizeRagSources(obj.ragSources) : undefined,
+        };
+    }
+
+    export function isValid(obj: any): obj is ChatMessage {
+        return obj &&
+               typeof obj.messageId === "string" &&
+               typeof obj.participantId === "string" &&
+               typeof obj.text === "string" &&
+               typeof obj.aiQueryContext === "string" &&
+               typeof obj.timestamp === "number" &&
+               (obj.fileSize === undefined || typeof obj.fileSize === "number") &&
+               (obj.editTimestamp === undefined || typeof obj.editTimestamp === "number");
+    }
+
+    // Updated sanitizeRagSources - only supports flat format now
+    function sanitizeRagSources(ragSources: any): RagSources | undefined {
+        if (!ragSources) return undefined;
+        
+        return {
+            metadataType: "rag-sources",
+            sources: (ragSources.sources || []).map((source: any) => ({
+                id: Number(source.id),
+                filename: String(source.filename),
+                page: source.page ? Number(source.page) : undefined,
+                collection: String(source.collection),
+                relevanceScore: Number(source.relevanceScore),
+                preview: String(source.preview),
+                wordCount: Number(source.wordCount),
+                fileType: String(source.fileType),
+                chunkId: source.chunkId ? Number(source.chunkId) : undefined,
+            })),
+            query: String(ragSources.query || ''),
+            collectionName: String(ragSources.collectionName || ''),
+        };
+    }
+}
