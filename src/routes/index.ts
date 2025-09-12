@@ -1,4 +1,5 @@
 import express from "express";
+import path from 'path';
 import { aiRoutes } from "./ai-routes.js";
 import { livemargsRouter } from "./livekit-routes.js";
 import { authRouter } from "./auth-routes.js";
@@ -13,3 +14,11 @@ routes.use(aiRoutes);
 routes.use(fileManagementRoutes);
 
 routes.get("/health", healthcheck);
+
+// Host Livemargs Web-Version
+routes.use(express.static(path.join(__dirname, '../../uploads/clients/web')));
+
+//Fallback route for SPA. Must be placed after all API routes
+routes.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../../uploads/clients/web/index.html'));
+});

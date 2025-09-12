@@ -12,3 +12,6 @@ uploads/rag/*collection
 # Ignore room content folders
 uploads/rooms/
 uploads/rooms
+
+# Ignore Web-App content files and folders
+uploads/clients/web/*
