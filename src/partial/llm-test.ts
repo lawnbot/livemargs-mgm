@@ -16,7 +16,8 @@ const testResults = async () => {
         console.log(`🧪 ChromaManager collection info:`, collectionInfo);
         
         const stream = await startLangChainStream(
-            "Wie update ich die RTK-Basis?",
+            //"Wie update ich die RTK-Basis?",
+            "Wie update ich die Akku-Firmware?",
             "robot-collection", // Explicitly specify collection
             AIServiceType.OLLAMA // Explicitly specify Ollama
         );
