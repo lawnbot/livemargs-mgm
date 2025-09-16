@@ -1,6 +1,7 @@
 import { Document } from "@langchain/core/documents";
 import { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { Embeddings } from "@langchain/core/embeddings";
+import { RagSources } from "../models/rag-sources.js";
 
 export interface IAIService {
     // Chat/Completion methods
@@ -9,6 +10,11 @@ export interface IAIService {
     
     // RAG (Retrieval Augmented Generation) methods
     generateRAGResponse(query: string, documents: Document[]): Promise<string>;
+    generateRAGStreamResponseWithSources(
+        query: string,
+        collectionName: string,
+        retrievedDocsWithScores: [Document, number][]
+    ): AsyncIterable<string | RagSources>;
     
     // Embedding methods
     createEmbeddings(texts: string[]): Promise<number[][]>;

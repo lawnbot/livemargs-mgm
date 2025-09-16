@@ -57,7 +57,7 @@ export abstract class BaseAIService implements IAIService {
         }
     }
 
-    async *startLangChainStream(
+    async *generateRAGStreamResponseWithSources(
         query: string,
         collectionName: string = "robot-collection",
         retrievedDocsWithScores: [Document, number][],

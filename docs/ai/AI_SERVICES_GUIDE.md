@@ -70,7 +70,6 @@ OLLAMA_TEMPERATURE=0
 
 # Chroma Vector Database
 CHROMA_URL=http://localhost:8000
-CHROMA_DB=/path/to/chroma/db
 CHROMA_DEFAULT_TOPIC=general
 ```
 

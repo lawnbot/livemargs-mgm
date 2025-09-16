@@ -1,6 +1,3 @@
-import { createStuffDocumentsChain } from "langchain/chains/combine_documents";
-import { StringOutputParser } from "@langchain/core/output_parsers";
-import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { Request, Response } from "express";
 import { Document } from "@langchain/core/documents";
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf";
@@ -45,103 +42,23 @@ export async function* startLangChainStream(
     const actualCollectionName = chromaManager.getCollectionInfo().name;
     console.log(`🔍 Using ChromaManager collection: ${actualCollectionName} (from folder: ${collectionName})`);
 
-    // Get AI service and create RAG chain
+    // Get AI service instance
     const aiService = AIServiceFactory.createSpecificAIService(aiServiceType);
-    const llm = aiService.getLLM();
-
-    const prompt = ChatPromptTemplate.fromTemplate(
-        `Answer the following question based on the provided context in the language of the Question: 
-        {context}
-        Question: {question}`,
-    );
-
-    const ragChain = await createStuffDocumentsChain({
-        llm,
-        prompt,
-        outputParser: new StringOutputParser(),
-    });
-
+    
     // Search relevant documents
     const retrievedDocsWithScores = await vectorStore.similaritySearchWithScore(query, 4);
-    const retrievedDocs = retrievedDocsWithScores.map(([doc, score]) => doc);
 
     // Debug: Log retrieved documents
     console.log(
-        `🔍 Retrieved ${retrievedDocs.length} documents from collection ${actualCollectionName}`,
+        `🔍 Retrieved ${retrievedDocsWithScores.length} documents from collection ${actualCollectionName}`,
     );
 
-    const eventStream = await ragChain.streamEvents(
-        {
-            question: query,
-            context: retrievedDocs,
-        },
-        {
-            version: "v2",
-        },
+    // Delegate to BaseAIService implementation to avoid duplication
+    yield* aiService.generateRAGStreamResponseWithSources(
+        query,
+        actualCollectionName,
+        retrievedDocsWithScores
     );
-
-    // Iterate over events and return only text chunks
-    for await (const event of eventStream) {
-        if (typeof event === "string") {
-            yield event;
-            continue;
-        }
-
-        if (event && typeof event === "object") {
-            const e: any = event;
-            if (
-                e.event === "on_chat_model_stream" &&
-                typeof e.data?.chunk?.content === "string"
-            ) {
-                yield e.data.chunk.content;
-                continue;
-            }
-
-            // Some implementations wrap data as string JSON
-            if (typeof e.data === "string") {
-                try {
-                    const parsed = JSON.parse(e.data);
-                    if (typeof parsed?.chunk?.content === "string") {
-                        yield parsed.chunk.content;
-                        continue;
-                    }
-                } catch {
-                    // If it's plain text (not a JSON/array dump), yield
-                    const s = e.data.trim();
-                    const looksLikeArray = s.startsWith("[") && s.endsWith("]");
-                    const looksLikeJSON = s.startsWith("{") && s.endsWith("}");
-                    if (!looksLikeArray && !looksLikeJSON) {
-                        yield s;
-                    }
-                    continue;
-                }
-            }
-        }
-    }
-
-    // Send sources with updated collection info
-    if (retrievedDocsWithScores.length > 0) {
-        const sourcesEvent: RagSources = {
-            metadataType: "rag-sources",
-            sources: retrievedDocsWithScores.map(([doc, score], index) => ({
-                id: index + 1,
-                filename: doc.metadata?.filename ||
-                    path.basename(doc.metadata?.source) ||
-                    "",
-                page: doc.metadata?.page || doc.metadata?.page_number,
-                collection: doc.metadata?.chroma_collection_name || actualCollectionName,
-                relevanceScore: Math.round(score * 1000) / 1000,
-                preview: createSafePreview(doc.pageContent, 150),
-                wordCount: doc.pageContent.split(" ").length,
-                fileType: doc.metadata?.file_extension || "",
-                chunkId: doc.metadata?.chunk_id || index,
-            })),
-            query: query,
-            collectionName: actualCollectionName,
-        };
-
-        yield sourcesEvent;
-    }
 }
 
 // https://www.robinwieruch.de/langchain-javascript-stream-structured/
@@ -180,26 +97,9 @@ async function llmSearch(query: string, aiServiceType: AIServiceType = AIService
     const chromaManager = await getChromaManagerByServiceType(aiServiceType, 'robot');
     const retrievedDocs = await chromaManager.similaritySearch(query);
 
-    // Get AI service and create RAG chain
+    // Get AI service and use its RAG functionality
     const aiService = AIServiceFactory.createSpecificAIService(aiServiceType);
-    const llm = aiService.getLLM();
-
-    const prompt = ChatPromptTemplate.fromTemplate(
-        `Answer the following question based on the provided context in the language of the Question: 
-        {context}
-        Question: {question}`,
-    );
-
-    const ragChain = await createStuffDocumentsChain({
-        llm,
-        prompt,
-        outputParser: new StringOutputParser(),
-    });
-
-    const result = await ragChain.invoke({
-        question: query,
-        context: retrievedDocs,
-    });
+    const result = await aiService.generateRAGResponse(query, retrievedDocs);
 
     console.log("Generated response:", result);
     return result;

@@ -101,6 +101,7 @@ export class ChromaManager {
             this.vectorStore = new Chroma(this.embeddings, {
                 url: this.config.url || process.env.CHROMA_URL,
                 collectionName: this.collectionName,
+                collectionMetadata: { "hnsw:space": "cosine" },                
             });
             
             console.log(`Initialized Chroma collection: ${this.collectionName}`);
@@ -174,7 +175,7 @@ export class ChromaManager {
         try {
             const { ChromaClient } = await import("chromadb");
             const client = new ChromaClient({
-                path: this.config.path || process.env.CHROMA_DB,
+                path: this.config.path || process.env.CHROMA_URL,
             });
 
             await client.deleteCollection({ name: this.collectionName });
@@ -274,7 +275,7 @@ export async function deleteChromaCollection(
         // Use Chroma client directly for collection deletion
         const { ChromaClient } = await import("chromadb");
         const client = new ChromaClient({
-            path: process.env.CHROMA_DB,            
+            path: process.env.CHROMA_URL,            
         });
 
         await client.deleteCollection({ name: collectionName });

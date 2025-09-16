@@ -16,6 +16,11 @@ interface IAIService {
   
   // RAG (Retrieval Augmented Generation)
   generateRAGResponse(query: string, documents: Document[]): Promise<string>;
+  generateRAGStreamResponseWithSources(
+        query: string,
+        collectionName: string,
+        retrievedDocsWithScores: [Document, number][]
+    ): AsyncIterable<string | RagSources>;
   
   // Embedding methods
   createEmbeddings(texts: string[]): Promise<number[][]>;
@@ -397,7 +402,6 @@ Creates and initializes a ChromaManager for Ollama service.
 | `OLLAMA_EMBEDDING_MODEL` | Ollama | "nomic-embed-text" | Ollama embedding model |
 | `OLLAMA_TEMPERATURE` | Ollama | 0 | Response randomness (0-1) |
 | `CHROMA_URL` | ChromaDB | - | ChromaDB server URL |
-| `CHROMA_DB` | ChromaDB | - | ChromaDB database path |
 | `CHROMA_DEFAULT_TOPIC` | ChromaDB | "general" | Default topic for collections |
 
 ## Usage Patterns
