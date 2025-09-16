@@ -23,6 +23,7 @@ routes.get("/health", healthcheck);
 routes.use(express.static(WEB_CLIENT_PATH));
 
 //Fallback route for SPA. Must be placed after all API routes
-routes.get('*', (req, res) => {
-  res.sendFile(path.resolve(WEB_CLIENT_PATH, 'index.html'));
+// Uses all potential routes
+routes.use((req, res) => {
+  res.sendFile(path.join(WEB_CLIENT_PATH, 'index.html'));
 });
