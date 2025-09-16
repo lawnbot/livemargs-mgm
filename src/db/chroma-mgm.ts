@@ -204,10 +204,11 @@ export class ChromaManager {
             'text-embedding-ada-002': 1536,
             'nomic-embed-text': 768,
             'all-MiniLM-L6-v2': 384,
+            'bge-m3': 1024, // Add bge-m3 model
         };
 
-        const model = this.config.embeddingModel || 
-            (this.config.aiServiceType === AIServiceType.OPENAI ? 'text-embedding-3-large' : 'nomic-embed-text');
+        // Use the same logic as in generateCollectionName to get the actual model
+        const model = this.config.embeddingModel || this.getDefaultModelFromEnv(this.config.aiServiceType);
 
         return {
             name: this.collectionName,

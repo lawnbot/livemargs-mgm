@@ -1,13 +1,24 @@
 import { AIServiceType } from "../ai/ai-interface.js";
 import { startLangChainStream } from "../controllers/ai.js";
+import { getChromaManagerByServiceType } from "../db/chroma-mgm.js";
 
 const testResults = async () => {
     const chunks = [];
     try {
+        console.log(`🧪 Test starting with AI Service: ${AIServiceType.OLLAMA}`);
+        console.log(`🧪 Expected collection should be: robot-ollama-bge-m3`);
+        console.log(`🧪 Environment OLLAMA_EMBEDDING_MODEL: ${process.env.OLLAMA_EMBEDDING_MODEL}`);
+        
+        // Debug: Test ChromaManager directly
+        console.log(`🧪 Testing ChromaManager directly...`);
+        const chromaManager = await getChromaManagerByServiceType(AIServiceType.OLLAMA, 'robot');
+        const collectionInfo = chromaManager.getCollectionInfo();
+        console.log(`🧪 ChromaManager collection info:`, collectionInfo);
+        
         const stream = await startLangChainStream(
-            //"Warum fährt mein Roboter langsam?",
             "Wie update ich die RTK-Basis?",
-            AIServiceType.OLLAMA
+            "robot-collection", // Explicitly specify collection
+            AIServiceType.OLLAMA // Explicitly specify Ollama
         );
         for await (const chunk of stream) {
 
