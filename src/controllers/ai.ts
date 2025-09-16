@@ -1,8 +1,6 @@
-import { ChatOpenAI, OpenAI, OpenAIEmbeddings } from "@langchain/openai";
 import { createStuffDocumentsChain } from "langchain/chains/combine_documents";
 import { StringOutputParser } from "@langchain/core/output_parsers";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
-import { Chroma } from "@langchain/community/vectorstores/chroma";
 import { Request, Response } from "express";
 import { Document } from "@langchain/core/documents";
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf";
@@ -19,6 +17,7 @@ import { RagSources } from "../models/rag-sources.js";
 import { getChromaManagerByServiceType } from "../db/chroma-mgm.js";
 import { AIServiceType } from "../ai/ai-interface.js";
 import { createSafePreview } from "../ai/base-ai-service.js";
+import { AIServiceFactory } from "../ai/ai-factory.js";
 
 export const getAIResult = async (req: Request, res: Response) => {
     const { query } = req.body as { query: string };
@@ -31,36 +30,46 @@ export const getAIResult = async (req: Request, res: Response) => {
 export async function* startLangChainStream(
     query: string,
     collectionName: string = "robot-collection",
+    aiServiceType: AIServiceType = AIServiceType.OPENAI,
 ): AsyncIterable<string | RagSources> {
-    const currentVectorStore = new Chroma(embeddings, {
-        collectionName: collectionName,
-        url: process.env.CHROMA_DB,
-        collectionMetadata: { "hnsw:space": "cosine" },
+    
+    // Extract topic from collectionName
+    const topic = collectionName.replace('-collection', '');
+    const chromaManager = await getChromaManagerByServiceType(aiServiceType, topic);
+    const vectorStore = chromaManager.getVectorStore();
+    
+    if (!vectorStore) {
+        throw new Error('Vector store not initialized');
+    }
+
+    const actualCollectionName = chromaManager.getCollectionInfo().name;
+    console.log(`🔍 Using ChromaManager collection: ${actualCollectionName} (from folder: ${collectionName})`);
+
+    // Get AI service and create RAG chain
+    const aiService = AIServiceFactory.createSpecificAIService(aiServiceType);
+    const llm = aiService.getLLM();
+
+    const prompt = ChatPromptTemplate.fromTemplate(
+        `Answer the following question based on the provided context in the language of the Question: 
+        {context}
+        Question: {question}`,
+    );
+
+    const ragChain = await createStuffDocumentsChain({
+        llm,
+        prompt,
+        outputParser: new StringOutputParser(),
     });
 
     // Search relevant documents
-    const retrievedDocsWithScores = await currentVectorStore
-        .similaritySearchWithScore(query, 4);
+    const retrievedDocsWithScores = await vectorStore.similaritySearchWithScore(query, 4);
     const retrievedDocs = retrievedDocsWithScores.map(([doc, score]) => doc);
 
     // Debug: Log retrieved documents
-    // console.log(
-    //     `🔍 Retrieved ${retrievedDocs.length} documents from collection ${collectionName}`,
-    // );
-    // if (retrievedDocs.length > 0) {
-    //     console.log(
-    //         "📄 Sample document content:",
-    //         retrievedDocs[0].pageContent.substring(0, 200) + "...",
-    //     );
-    // }
+    console.log(
+        `🔍 Retrieved ${retrievedDocs.length} documents from collection ${actualCollectionName}`,
+    );
 
-    // const contextTexts = retrievedDocs.map((d) => ({
-    //     content: d.pageContent ?? String(d),
-    //     metadata: d.metadata || {},
-    // }));
-    // Add finally context: contextTexts[0],
-
-    // Start LangChain-Stream
     const eventStream = await ragChain.streamEvents(
         {
             question: query,
@@ -68,22 +77,18 @@ export async function* startLangChainStream(
         },
         {
             version: "v2",
-            // encoding: "text/event-stream", // Remove enconding to properly get it as event stream!!!!
         },
     );
 
     // Iterate over events and return only text chunks
     for await (const event of eventStream) {
-        // Plain string events
         if (typeof event === "string") {
             yield event;
             continue;
         }
 
-        // Structured events
         if (event && typeof event === "object") {
             const e: any = event;
-            // Prefer chat model token events
             if (
                 e.event === "on_chat_model_stream" &&
                 typeof e.data?.chunk?.content === "string"
@@ -91,6 +96,7 @@ export async function* startLangChainStream(
                 yield e.data.chunk.content;
                 continue;
             }
+
             // Some implementations wrap data as string JSON
             if (typeof e.data === "string") {
                 try {
@@ -111,20 +117,19 @@ export async function* startLangChainStream(
                 }
             }
         }
-        // Skip all other non-text events (do not stringify objects to avoid vectors)
     }
-    // Send sources as typed JSON object
+
+    // Send sources with updated collection info
     if (retrievedDocsWithScores.length > 0) {
         const sourcesEvent: RagSources = {
             metadataType: "rag-sources",
-
             sources: retrievedDocsWithScores.map(([doc, score], index) => ({
                 id: index + 1,
                 filename: doc.metadata?.filename ||
                     path.basename(doc.metadata?.source) ||
                     "",
                 page: doc.metadata?.page || doc.metadata?.page_number,
-                collection: doc.metadata?.collection_name || collectionName,
+                collection: doc.metadata?.chroma_collection_name || actualCollectionName,
                 relevanceScore: Math.round(score * 1000) / 1000,
                 preview: createSafePreview(doc.pageContent, 150),
                 wordCount: doc.pageContent.split(" ").length,
@@ -132,15 +137,18 @@ export async function* startLangChainStream(
                 chunkId: doc.metadata?.chunk_id || index,
             })),
             query: query,
-            collectionName: collectionName,
+            collectionName: actualCollectionName,
         };
 
         yield sourcesEvent;
     }
 }
+
 // https://www.robinwieruch.de/langchain-javascript-stream-structured/
 export const streamAIResult = async (req: Request, res: Response) => {
     const { query } = req.body as { query: string };
+    
+    // Set headers for streaming
     let headers = new Map<string, string>();
     headers.set("Connection", "keep-alive");
     headers.set("Content-Encoding", "none");
@@ -148,123 +156,45 @@ export const streamAIResult = async (req: Request, res: Response) => {
     headers.set("Content-Type", "text/event-stream; charset=utf-8");
     res.setHeaders(headers);
 
-    // // Set the response headers for streaming
-    // res.setHeader("Content-Type", "text/plain");
-    // res.setHeader("Transfer-Encoding", "chunked");
-    const currentVectorStore = new Chroma(embeddings, {
-        collectionName: "robot-collection",
-        url: process.env.CHROMA_DB,
-        collectionMetadata: { "hnsw:space": "cosine" },
-    });
-
-    const retrievedDocs = await currentVectorStore.similaritySearch(query);
-    // Debug: Log retrieved documents
-    console.log(
-        `🔍 Retrieved ${retrievedDocs.length} documents for query: ${query}`,
-    );
-
-    let eventStream = await ragChain.streamEvents({
-        question: query,
-        context: retrievedDocs, // Document-Objects, nicht Strings!
-    }, {
-        version: "v2",
-    });
-
-    // for await (const { event, data } of eventStream) {
-    //     if (event === "on_chat_model_stream") {
-    //         await this.handleChatModelStream(data, res, model, metrics);
-    //         if (typeof data.chunk.content === "string") {
-    //             result += data.chunk.content;
-    //         }
-    //     }
-    // }
-    // Pipe the stream to the response
-    //  stream.pipe(res);
-
-    //  // Handle stream end
-    //  stream.on('end', () => {
-    //    res.end();
-    //  });
-
-    //  // Handle stream errors
-    //  stream.on('error', (err) => {
-    //    console.error('Stream error:', err);
-    //    res.status(500).send('Internal Server Error');
-    //  });
-
-    const chunks = [];
-    for await (const chunk of eventStream) {
-        chunks.push(chunk);
-        console.log(`${chunk}|`);
-        res.write(chunk);
+    // Use ChromaManager-based streaming
+    const aiServiceType = (process.env.AI_SERVICE_TYPE?.toLowerCase() === 'ollama') 
+        ? AIServiceType.OLLAMA 
+        : AIServiceType.OPENAI;
+    
+    try {
+        for await (const chunk of startLangChainStream(query, "robot-collection", aiServiceType)) {
+            console.log(`${chunk}|`);
+            res.write(chunk);
+        }
+    } catch (error) {
+        console.error('Stream error:', error);
+        res.status(500).send('Internal Server Error');
+        return;
     }
 
-    //res.send(stream);
     res.end();
-
-    //     const stream = await ragChain.stream({
-    //         question: query,
-    //         context: retrievedDocs,
-    //     });
-    //     const chunks = [];
-
-    //   for await (const chunk of stream) {
-    //   chunks.push(chunk);
-    //   //console.log(`${chunk.content}|`);
-    //   res.send(chunk);
 };
 
-const llm = new ChatOpenAI({
-    //configuration: ClientOptions(),
-    openAIApiKey: process.env.OPENAI_SECRET_KEY,
-    model: "gpt-5-chat-latest", //"gpt-4", //"gpt-5-chat-latest", //"gpt-5-nano", //"gpt-4.1-mini", //"gpt-5-nano", //"gpt-4",
-    //zero temperature means no extra creativity
-    temperature: 0,
-});
+async function llmSearch(query: string, aiServiceType: AIServiceType = AIServiceType.OPENAI): Promise<string> {
+    // Use ChromaManager approach
+    const chromaManager = await getChromaManagerByServiceType(aiServiceType, 'robot');
+    const retrievedDocs = await chromaManager.similaritySearch(query);
 
-const embeddings = new OpenAIEmbeddings({
-    model: "text-embedding-3-large",
-    apiKey: process.env.OPENAI_SECRET_KEY,
-});
+    // Get AI service and create RAG chain
+    const aiService = AIServiceFactory.createSpecificAIService(aiServiceType);
+    const llm = aiService.getLLM();
 
-// const vectorStore = new Chroma(embeddings, {
-//     collectionName: "robot-collection",
-//     url: process.env.CHROMA_DB, //"http://192.168.0.223:8102"
-//     collectionMetadata: { "hnsw:space": "cosine" },
-// });
+    const prompt = ChatPromptTemplate.fromTemplate(
+        `Answer the following question based on the provided context in the language of the Question: 
+        {context}
+        Question: {question}`,
+    );
 
-// Retrieve and generate using the relevant snippets of the blog.
-//const retriever = vectorStore.asRetriever();
-//const prompt = await pull<ChatPromptTemplate>("rlm/rag-prompt"); // Is a predefined one.
-
-// const systemTemplate = "Translate the following into {language}:";
-// const prompt = ChatPromptTemplate.fromMessages([
-//     ["system", systemTemplate],
-//     ["user", "{text}"],
-// ]);
-// Retrieve relevant documents
-
-const prompt = ChatPromptTemplate.fromTemplate(
-    `Answer the following question based on the provided context in the language of the Question: 
-    {context}
-    Question: {question}`,
-);
-
-const ragChain = await createStuffDocumentsChain({
-    llm,
-    prompt,
-    outputParser: new StringOutputParser(),
-});
-
-async function llmSearch(query: string): Promise<string> {
-    //const retrievedDocs = await retriever.invoke(query);
-    const currentVectorStore = new Chroma(embeddings, {
-        collectionName: "robot-collection",
-        url: process.env.CHROMA_DB,
-        collectionMetadata: { "hnsw:space": "cosine" },
+    const ragChain = await createStuffDocumentsChain({
+        llm,
+        prompt,
+        outputParser: new StringOutputParser(),
     });
-
-    const retrievedDocs = await currentVectorStore.similaritySearch(query);
 
     const result = await ragChain.invoke({
         question: query,
@@ -280,6 +210,7 @@ function extractDocumentMetadata(
     doc: Document,
     index: number,
     collectionName: string,
+    chromaCollectionName?: string,
 ) {
     const filePath = doc.metadata.source || "";
     const filename = path.basename(filePath);
@@ -298,21 +229,13 @@ function extractDocumentMetadata(
         file_name_without_ext: fileNameWithoutExt,
         document_id: index,
         page_number: pageNumber,
-        collection_name: collectionName,
+        collection_name: collectionName, // Original folder name (for backward compatibility)
+        chroma_collection_name: chromaCollectionName, // Actual Chroma collection name
         load_timestamp: new Date().toISOString(),
         file_size_chars: doc.pageContent.length,
         content_hash: doc.pageContent.slice(0, 100), // First 100 chars as identifier
     };
 }
-
-// Train all collections
-// await startFolderBasedRAGTraining(undefined, undefined);
-
-// Train sepcific collection
-// await startFolderBasedRAGTraining("erco-collection", undefined);
-
-// Train spezific file in a collection
-// await startFolderBasedRAGTraining("robot-collection", "manual.pdf");
 
 export async function startFolderBasedRAGTraining(
     specificCollectionToTrain: string | undefined,
@@ -390,6 +313,27 @@ async function processCollection(
             `🔄 Processing collection: ${collectionFolder} at ${collectionPath}`,
         );
 
+        // Determine AI service type from environment or default to OpenAI
+        const aiServiceType = (process.env.AI_SERVICE_TYPE?.toLowerCase() === 'ollama') 
+            ? AIServiceType.OLLAMA 
+            : AIServiceType.OPENAI;
+
+        // Get ChromaManager with consistent naming
+        // collectionFolder (e.g. "robot-collection") becomes topic "robot"
+        const topic = collectionFolder.replace('-collection', '');
+        
+        console.log(`📁 File structure folder: ${collectionFolder}`);
+        console.log(`🏷️ Chroma topic: ${topic}`);
+        console.log(`🤖 AI Service: ${aiServiceType}`);
+
+        const chromaManager = await getChromaManagerByServiceType(
+            aiServiceType,
+            topic
+        );
+
+        const chromaCollectionName = chromaManager.getCollectionInfo().name;
+        console.log(`📊 Chroma collection name: ${chromaCollectionName}`);
+
         // Set up document loaders for different file types
         const loaderMap = {
             ".txt": (path: string) => new TextLoader(path),
@@ -449,6 +393,7 @@ async function processCollection(
                 doc,
                 index,
                 collectionFolder,
+                chromaCollectionName // Add actual Chroma collection name
             );
             return new Document({
                 pageContent: doc.pageContent,
@@ -492,6 +437,10 @@ async function processCollection(
                     chunk_length: content.length,
                     chunk_word_count: content.split(" ").length,
                     processing_timestamp: new Date().toISOString(),
+                    file_structure_folder: collectionFolder, // Original folder name
+                    chroma_collection: chromaCollectionName, // Actual Chroma collection
+                    topic: topic, // Extracted topic
+                    ai_service_type: aiServiceType // AI service used
                 });
 
                 return new Document({
@@ -512,21 +461,8 @@ async function processCollection(
             `✅ Validated ${validatedDocs.length}/${splitDocs.length} chunks for collection: ${collectionFolder}`,
         );
 
-        //await ensureCollectionExists(collectionFolder);
-
-        // Create vector store for this collection
-        const collectionVectorStore = new Chroma(embeddings, {
-            collectionName: collectionFolder, // Use folder name as collection name
-            url: process.env.CHROMA_DB,
-
-            collectionMetadata: { "hnsw:space": "cosine" },
-        });
-
-        // Add documents to vector store
-        // await collectionVectorStore.addDocuments(splitDocs);
-        //await collectionVectorStore.addDocuments(enhancedSplitDocs);
-
-        console.log("🚀 Starting to add documents to Chroma...");
+        // Use ChromaManager instead of direct Chroma instantiation
+        console.log("🚀 Starting to add documents to Chroma via ChromaManager...");
 
         // Process in smaller batches to avoid overloading Chroma
         const batchSize = 5;
@@ -541,19 +477,22 @@ async function processCollection(
                 console.log(
                     `📦 Processing batch ${batchNum}/${totalBatches} (${batch.length} docs)`,
                 );
-                await collectionVectorStore.addDocuments(batch);
+                
+                // Use ChromaManager's addDocuments method
+                await chromaManager.addDocuments(batch);
+                
                 successCount += batch.length;
-                console.log(`✅ Batch ${batchNum} added successfully`);
+                console.log(`✅ Batch ${batchNum} added successfully to ${chromaCollectionName}`);
             } catch (batchError) {
                 console.error(`❌ Error in batch ${batchNum}:`, batchError);
 
                 // Try individual documents in failed batch
                 for (let j = 0; j < batch.length; j++) {
                     try {
-                        await collectionVectorStore.addDocuments([batch[j]]);
+                        await chromaManager.addDocuments([batch[j]]);
                         successCount++;
                         console.log(
-                            `✅ Individual document ${i + j + 1} added`,
+                            `✅ Individual document ${i + j + 1} added to ${chromaCollectionName}`,
                         );
                     } catch (docError) {
                         console.error(
@@ -572,14 +511,16 @@ async function processCollection(
         }
 
         console.log(
-            `🎉 Successfully added ${successCount}/${validatedDocs.length} document chunks to collection: ${collectionFolder}`,
+            `🎉 Successfully added ${successCount}/${validatedDocs.length} document chunks to Chroma collection: ${chromaCollectionName} (from folder: ${collectionFolder})`,
         );
 
         // Log sample metadata for debugging
         if (validatedDocs.length > 0) {
             console.log(
-                "📋 Sample document metadata for collection",
+                "📋 Sample document metadata for folder",
                 collectionFolder,
+                "-> Chroma collection",
+                chromaCollectionName,
                 ":",
             );
             console.log(JSON.stringify(validatedDocs[0].metadata, null, 2));
@@ -649,16 +590,16 @@ export async function listAvailableCollections(): Promise<string[]> {
 
 export async function deleteChromaCollection(
     collectionName: string,
+    aiServiceType: AIServiceType = AIServiceType.OPENAI,
 ): Promise<void> {
     try {
-        // Use Chroma client directly for collection deletion
-        const { ChromaClient } = await import("chromadb");
-        const client = new ChromaClient({
-            path: process.env.CHROMA_DB,
-        });
-
-        await client.deleteCollection({ name: collectionName });
-        console.log(`Successfully deleted collection: ${collectionName}`);
+        // Extract topic from collection name
+        const topic = collectionName.replace('-collection', '');
+        const chromaManager = await getChromaManagerByServiceType(aiServiceType, topic);
+        
+        // Use ChromaManager's delete functionality
+        await chromaManager.deleteCollection();
+        console.log(`Successfully deleted collection: ${chromaManager.getCollectionInfo().name}`);
     } catch (error) {
         console.error(`Error deleting collection ${collectionName}:`, error);
         throw error;
@@ -667,57 +608,19 @@ export async function deleteChromaCollection(
 
 export async function clearChromaCollection(
     collectionName: string,
+    aiServiceType: AIServiceType = AIServiceType.OPENAI,
 ): Promise<void> {
     try {
-        const vectorStore = new Chroma(embeddings, {
-            collectionName: collectionName,
-            url: process.env.CHROMA_DB,
-            collectionMetadata: { "hnsw:space": "cosine" },
-        });
-
-        // Delete all documents in the collection
-        await vectorStore.delete({});
-        console.log(`Successfully cleared collection: ${collectionName}`);
+        // Extract topic from collection name
+        const topic = collectionName.replace('-collection', '');
+        const chromaManager = await getChromaManagerByServiceType(aiServiceType, topic);
+        
+        // Delete and recreate collection to clear it
+        await chromaManager.deleteCollection();
+        // ChromaManager will automatically recreate the collection when needed
+        console.log(`Successfully cleared collection: ${chromaManager.getCollectionInfo().name}`);
     } catch (error) {
         console.error(`Error clearing collection ${collectionName}:`, error);
         throw error;
     }
 }
-
-/* // List all collections in Chroma DB
-export async function listChromaCollections(): Promise<string[]> {
-    try {
-        const { ChromaClient } = await import("chromadb");
-        const client = new ChromaClient({
-            path: process.env.CHROMA_DB
-        });
-
-        const collections = await client.listCollections();
-        return collections.map(c => c.name);
-    } catch (error) {
-        console.error("Error listing Chroma collections:", error);
-        return [];
-    }
-} */
-
-/* export async function getCollectionStats(collectionName: string): Promise<{
-    documentCount: number;
-    totalChunks: number;
-    lastUpdated: Date;
-    fileTypes: Record<string, number>;
-}> {
-    const vectorStore = new Chroma(embeddings, {
-        collectionName,
-        url: process.env.CHROMA_DB,
-        collectionMetadata: { "hnsw:space": "cosine" },
-    });
-
-    // Implementation would depend on Chroma's API for collection statistics
-    // This is a placeholder structure
-    return {
-        documentCount: 0,
-        totalChunks: 0,
-        lastUpdated: new Date(),
-        fileTypes: {},
-    };
-} */

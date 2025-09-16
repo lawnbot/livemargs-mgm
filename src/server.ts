@@ -36,6 +36,7 @@ import { startLangChainStream } from "./controllers/ai.js";
 import { DatabaseFactory } from "./db/db-factory.js";
 import { startFolderBasedRAGTraining } from "./controllers/ai.js";
 import { RagSources } from "./models/rag-sources.js";
+import { AIServiceType } from "./ai/ai-interface.js";
 
 // Initialize dotenv to load environment variables from .env file
 dotenv.config();
@@ -489,6 +490,11 @@ wss.on(
         const messageId = nanoid(9); // That flutter knows to which message add the chunk
         const chunks = [];
 
+        // Determine AI service type from environment or default to OpenAI
+        const aiServiceType = (process.env.AI_SERVICE_TYPE?.toLowerCase() === 'ollama') 
+          ? AIServiceType.OLLAMA 
+          : AIServiceType.OPENAI;
+
         let collectionName: string = "robot-collection";
         switch (messageDataObj.selectedAI) {
           case "Robots":
@@ -505,10 +511,16 @@ wss.on(
             break;
         }
 
+        console.log(`🤖 Using AI Service: ${aiServiceType}`);
+        console.log(`📁 File structure folder: ${collectionName}`);
+
         try {
           let ragSources: RagSources | undefined;
           let joinedMessage = "";
-          const stream = await startLangChainStream(query, collectionName);
+          
+          // Use ChromaManager-aware streaming with AI service type
+          const stream = await startLangChainStream(query, collectionName, aiServiceType);
+          
           for await (const chunk of stream) {
             if (typeof chunk === "string") {
               chunks.push(chunk);
