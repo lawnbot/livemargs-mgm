@@ -16,6 +16,9 @@ import { SRTLoader } from "@langchain/community/document_loaders/fs/srt";
 import * as path from "path";
 import * as fs from "fs";
 import { RagSources } from "../models/rag-sources.js";
+import { getChromaManagerByServiceType } from "../db/chroma-mgm.js";
+import { AIServiceType } from "../ai/ai-interface.js";
+import { createSafePreview } from "../ai/base-ai-service.js";
 
 export const getAIResult = async (req: Request, res: Response) => {
     const { query } = req.body as { query: string };
@@ -261,23 +264,6 @@ async function llmSearch(query: string): Promise<string> {
         collectionMetadata: { "hnsw:space": "cosine" },
     });
 
-    const retrievedDocs = await currentVectorStore.similaritySearch(query);
-
-    const result = await ragChain.invoke({
-        question: query,
-        context: retrievedDocs,
-    });
-
-    console.log("Generated response:", result);
-    return result;
-}
-async function llmSearchWStreamResp(query: string): Promise<string> {
-    //const retrievedDocs = await retriever.invoke(query);
-    const currentVectorStore = new Chroma(embeddings, {
-        collectionName: "robot-collection",
-        url: process.env.CHROMA_DB,
-        collectionMetadata: { "hnsw:space": "cosine" },
-    });
     const retrievedDocs = await currentVectorStore.similaritySearch(query);
 
     const result = await ragChain.invoke({
@@ -697,18 +683,7 @@ export async function clearChromaCollection(
         throw error;
     }
 }
-// Helper function to create safe preview
-function createSafePreview(content: string, maxLength: number = 150): string {
-    if (!content) return "";
 
-    const cleanContent = content.replace(/\n/g, " ").trim();
-
-    if (cleanContent.length <= maxLength) {
-        return cleanContent;
-    }
-
-    return cleanContent.substring(0, maxLength) + "...";
-}
 /* // List all collections in Chroma DB
 export async function listChromaCollections(): Promise<string[]> {
     try {
