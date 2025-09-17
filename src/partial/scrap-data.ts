@@ -1,9 +1,15 @@
+import { AIServiceType } from "../ai/ai-interface.js";
 import { startFolderBasedRAGTraining } from "../controllers/ai.js";
-import { deleteChromaCollection } from "../db/chroma-mgm.js";
+import { deleteChromaCollection, getChromaManagerByServiceType } from "../db/chroma-mgm.js";
 
 console.log("Start Training");
 
-//await deleteChromaCollection("robots-collection");
+const chromaManager = await getChromaManagerByServiceType(
+    AIServiceType.OLLAMA,
+    "robot",
+);
+const collectionInfo = chromaManager.getCollectionInfo();
+await chromaManager.deleteCollection();
 await startFolderBasedRAGTraining(undefined, undefined);
 
 // const documents: Document[] = [{
