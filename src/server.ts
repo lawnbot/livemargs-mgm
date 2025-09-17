@@ -491,9 +491,10 @@ wss.on(
         const chunks = [];
 
         // Determine AI service type from environment or default to OpenAI
-        const aiServiceType = (process.env.AI_SERVICE_TYPE?.toLowerCase() === 'ollama') 
-          ? AIServiceType.OLLAMA 
-          : AIServiceType.OPENAI;
+        const aiServiceType =
+          (process.env.AI_SERVICE_TYPE?.toLowerCase() === "ollama")
+            ? AIServiceType.OLLAMA
+            : AIServiceType.OPENAI;
 
         let collectionName: string = "robot-collection";
         switch (messageDataObj.selectedAI) {
@@ -517,10 +518,25 @@ wss.on(
         try {
           let ragSources: RagSources | undefined;
           let joinedMessage = "";
-          
+
+          // Send empty Message data to indicate to indicate in the app the loading while text is empty.
+          await sendChatMessageData(roomName, {
+            messageId: messageId,
+            participantId: "ai",
+            text: joinedMessage,
+            aiQueryContext: "",
+            timestamp: Date.now(),
+            type: MessageType.Text,
+            ragSources: ragSources,
+          }, true);
+
           // Use ChromaManager-aware streaming with AI service type
-          const stream = await startLangChainStream(query, collectionName, aiServiceType);
-          
+          const stream = await startLangChainStream(
+            query,
+            collectionName,
+            aiServiceType,
+          );
+
           for await (const chunk of stream) {
             if (typeof chunk === "string") {
               chunks.push(chunk);

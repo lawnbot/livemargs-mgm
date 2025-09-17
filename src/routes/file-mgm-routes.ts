@@ -66,10 +66,10 @@ router.post(
     uploadForRagCollection,
 );
 
-// Download a file from a room
+// Download a file from the rag. Allow all users access.
 router.get(
     "/downloadFileFromRag/:collection/:filename",
-    checkUploadRequiresAuth,
+    //authenticateTokenMiddleWare, // Allow the download all.
     preSanitizeCheckCollection,
     downloadFileFromRAG,
 );
