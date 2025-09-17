@@ -84,6 +84,15 @@ export abstract class BaseAIService implements IAIService {
         // }));
         // Add finally context: contextTexts[0],
 
+        // const prompt = ChatPromptTemplate.fromTemplate(`
+        //     Answer the following question based only on the provided context.
+        //     If you cannot answer the question based on the context, say so.
+            
+        //     Context: {context}
+            
+        //     Question: {question}
+        // `);
+
         const ragChain = await createStuffDocumentsChain({
             llm: this.llm,
             prompt,
@@ -113,14 +122,25 @@ export abstract class BaseAIService implements IAIService {
             // Structured events
             if (event && typeof event === "object") {
                 const e: any = event;
-                // Prefer chat model token events
+                
+                // Handle different LLM streaming event types
                 if (
-                    e.event === "on_chat_model_stream" &&
-                    typeof e.data?.chunk?.content === "string"
+                    (e.event === "on_chat_model_stream" || e.event === "on_llm_stream") &&
+                    e.data?.chunk?.content && typeof e.data.chunk.content === "string"
                 ) {
                     yield e.data.chunk.content;
                     continue;
                 }
+                // Used by Ollama
+                // Handle parser stream events (final output)
+                if (
+                    e.event === "on_parser_stream" &&
+                    e.data?.chunk && typeof e.data.chunk === "string"
+                ) {
+                    yield e.data.chunk;
+                    continue;
+                }
+                
                 // Some implementations wrap data as string JSON
                 if (typeof e.data === "string") {
                     try {
