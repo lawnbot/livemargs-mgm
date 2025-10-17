@@ -1,0 +1,13 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "de.echmot.livemargs",
+      "sha256_cert_fingerprints": [
+        "8C:66:F8:55:0C:CB:A4:5A:28:0D:30:A7:48:68:DC:B8:2E:41:5B:E8:A3:84:84:F8:BA:F0:25:C2:28:3F:6C:F1",
+        "53:A3:33:9F:59:72:5B:4E:BB:CE:FD:26:6A:FA:C1:92:61:E2:81:EB:A4:63:9D:82:02:DC:1A:3D:47:2D:8D:CC"
+      ]
+    }
+  }
+]

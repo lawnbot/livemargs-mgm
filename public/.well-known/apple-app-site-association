@@ -1,0 +1,21 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "XCAJ8YMGT9.de.echmot.livemargs",
+        "paths": [
+          "/room/*",
+          "/join/*",
+          "NOT /api/*",
+          "NOT /admin/*"
+        ]
+      }
+    ]
+  },
+  "webcredentials": {
+    "apps": [
+      "XCAJ8YMGT9.de.echmot.livemargs"
+    ]
+  }
+}
