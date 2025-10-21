@@ -710,7 +710,49 @@ server.on("upgrade", (request, socket, head) => {
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cors());
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: [
+        "'self'",
+        "'unsafe-inline'",
+        "'unsafe-eval'", // Required for WASM
+        "https://www.gstatic.com",
+      ],
+      workerSrc: ["'self'", "blob:"],
+      styleSrc: [
+        "'self'",
+        "'unsafe-inline'",
+        "https://fonts.googleapis.com",
+      ],
+      fontSrc: [
+        "'self'",
+        "https://fonts.gstatic.com",
+        "data:",
+      ],
+      imgSrc: [
+        "'self'",
+        "data:",
+        "blob:",
+      ],
+      connectSrc: [
+        "'self'",
+        "https://www.gstatic.com",
+        "https://fonts.gstatic.com",
+        "https://livekit.echo-motorgeraete.de", // Add your LiveKit server
+        "wss://livekit.echo-motorgeraete.de", // Add WebSocket endpoint
+        "wss:", // For WebSocket connections
+        "ws:",
+      ],
+      frameSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      upgradeInsecureRequests: [],
+    },
+  },
+  crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+}));
 
 // routes
 app.use("/", routes);
