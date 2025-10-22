@@ -498,7 +498,10 @@ wss.on(
 
         let collectionName: string = "robot-collection";
         switch (messageDataObj.selectedAI) {
-          case "Robots":
+          case "Robots": // old
+            collectionName = "robot-collection";
+            break;
+          case "Robotics":
             collectionName = "robot-collection";
             break;
           case "OPE":
