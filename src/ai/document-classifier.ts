@@ -135,27 +135,30 @@ export class DocumentClassifier {
             return DocumentSpecificity.GENERAL;
         }
 
-        // If specific model number found and appears in filename
+        // Check if any model number appears in the filename
+        const modelInFilename = modelNumbers.some(
+            (model) => lowerFilename.includes(model.toLowerCase()),
+        );
+
+        // If model number found in filename, it's product-specific
+        if (modelInFilename) {
+            // Even if multiple models in content, if one is in filename, it's that product's doc
+            return DocumentSpecificity.PRODUCT_SPECIFIC;
+        }
+
+        // If specific model number found in content (even if not in filename)
         if (modelNumbers.length === 1) {
-            const modelInFilename = modelNumbers.some(
-                (model) => lowerFilename.includes(model.toLowerCase()),
-            );
-            if (modelInFilename) {
-                return DocumentSpecificity.PRODUCT_SPECIFIC;
-            }
+            return DocumentSpecificity.PRODUCT_SPECIFIC;
         }
 
-        // If multiple models or category detected but no specific model in filename
-        if (category && modelNumbers.length === 0) {
-            return DocumentSpecificity.CATEGORY_COMMON;
-        }
-
+        // If multiple models found in content (and none in filename)
         if (modelNumbers.length > 1) {
             return DocumentSpecificity.CATEGORY_COMMON;
         }
 
-        if (modelNumbers.length === 1) {
-            return DocumentSpecificity.PRODUCT_SPECIFIC;
+        // If category detected but no specific model
+        if (category && modelNumbers.length === 0) {
+            return DocumentSpecificity.CATEGORY_COMMON;
         }
 
         return DocumentSpecificity.GENERAL;
