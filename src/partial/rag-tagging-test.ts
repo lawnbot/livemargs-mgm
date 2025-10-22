@@ -73,7 +73,7 @@ const testCases = [
         name: "ERCO Leaf Blower",
         filename: "EB-9013-manual.pdf",
         filePath: "/uploads/rag/erco-collection/ES-250-manual.pdf",
-        content: "The ES-9013 leaf blower is ideal for gardeners.",
+        content: "The EB-9013 leaf blower is ideal for gardeners.",
         collectionName: "erco-collection",
         expected: {
             category: ProductCategory.ERCO,

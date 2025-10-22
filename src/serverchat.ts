@@ -1,7 +1,8 @@
 import { ChatOpenAI, OpenAI, OpenAIEmbeddings } from "@langchain/openai";
-import { createStuffDocumentsChain } from "langchain/chains/combine_documents";
 import { StringOutputParser } from "@langchain/core/output_parsers";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { RunnableSequence } from "@langchain/core/runnables";
+import { Document } from "@langchain/core/documents";
 import { Chroma } from "@langchain/community/vectorstores/chroma";
 import { createServer, IncomingMessage, ServerResponse } from "http";
 import { parse } from "url";
@@ -88,18 +89,29 @@ const vectorStore = new Chroma(embeddings, {
 
 const prompt = ChatPromptTemplate.fromTemplate(
     `Answer the following question based on the provided context: 
-    {context}
+    Context: {context}
     Question: {question}`,
 );
 
- const ragChain = await createStuffDocumentsChain({
-    llm,
+// Helper to format documents
+const formatDocuments = (docs: Document[]): string => {
+    return docs.map((doc) => doc.pageContent).join("\n\n");
+};
+
+// Create RAG chain using LCEL (LangChain 1.0)
+const ragChain = RunnableSequence.from([
+    {
+        context: (input: { question: string; context: Document[] }) =>
+            formatDocuments(input.context),
+        question: (input: { question: string; context: Document[] }) =>
+            input.question,
+    },
     prompt,
-    outputParser: new StringOutputParser(),
-});
+    llm,
+    new StringOutputParser(),
+]);
 
 async function llmSearch(query: string): Promise<string> {
-    //const retrievedDocs = await retriever.invoke(query);
     const retrievedDocs = await vectorStore.similaritySearch(query);
 
     const result = await ragChain.invoke({

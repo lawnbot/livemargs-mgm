@@ -1,12 +1,12 @@
 import { Request, Response } from "express";
 import { Document } from "@langchain/core/documents";
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf";
-import { DirectoryLoader } from "langchain/document_loaders/fs/directory";
-import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
+import { DirectoryLoader } from "@langchain/classic/document_loaders/fs/directory";
+import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 import { DocxLoader } from "@langchain/community/document_loaders/fs/docx";
-import { JSONLoader } from "langchain/document_loaders/fs/json";
+import { JSONLoader } from "@langchain/classic/document_loaders/fs/json";
 import { PPTXLoader } from "@langchain/community/document_loaders/fs/pptx";
-import { TextLoader } from "langchain/document_loaders/fs/text";
+import { TextLoader } from "@langchain/classic/document_loaders/fs/text";
 import { SRTLoader } from "@langchain/community/document_loaders/fs/srt";
 import * as path from "path";
 import * as fs from "fs";

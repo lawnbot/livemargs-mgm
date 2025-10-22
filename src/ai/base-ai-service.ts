@@ -3,7 +3,7 @@ import { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { Embeddings } from "@langchain/core/embeddings";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { StringOutputParser } from "@langchain/core/output_parsers";
-import { createStuffDocumentsChain } from "langchain/chains/combine_documents";
+import { RunnableSequence } from "@langchain/core/runnables";
 import { IAIService } from "./ai-interface.js";
 import { RagSources } from "../models/rag-sources.js";
 import path from "path";
@@ -62,44 +62,33 @@ export abstract class BaseAIService implements IAIService {
         collectionName: string = "robot-collection",
         retrievedDocsWithScores: [Document, number][],
     ): AsyncIterable<string | RagSources> {
-        // Search relevant documents
-        const retrievedDocs = retrievedDocsWithScores.map(([doc, score]) =>
-            doc
+        const retrievedDocs = retrievedDocsWithScores.map(([doc, score]) => doc);
+
+        // Helper to format documents
+        const formatDocuments = (docs: Document[]): string => {
+            return docs.map((doc) => doc.pageContent).join("\n\n");
+        };
+
+        const prompt = ChatPromptTemplate.fromTemplate(
+            `Answer the following question based on the provided context in the language of the Question: 
+            Context: {context}
+            Question: {question}`
         );
 
-        // Debug: Log retrieved documents
-        // console.log(
-        //     `🔍 Retrieved ${retrievedDocs.length} documents from collection ${collectionName}`,
-        // );
-        // if (retrievedDocs.length > 0) {
-        //     console.log(
-        //         "📄 Sample document content:",
-        //         retrievedDocs[0].pageContent.substring(0, 200) + "...",
-        //     );
-        // }
-
-        // const contextTexts = retrievedDocs.map((d) => ({
-        //     content: d.pageContent ?? String(d),
-        //     metadata: d.metadata || {},
-        // }));
-        // Add finally context: contextTexts[0],
-
-        // const prompt = ChatPromptTemplate.fromTemplate(`
-        //     Answer the following question based only on the provided context.
-        //     If you cannot answer the question based on the context, say so.
-            
-        //     Context: {context}
-            
-        //     Question: {question}
-        // `);
-
-        const ragChain = await createStuffDocumentsChain({
-            llm: this.llm,
+        // Create RAG chain using LCEL (LangChain 1.0)
+        const ragChain = RunnableSequence.from([
+            {
+                context: (input: { question: string; context: Document[] }) =>
+                    formatDocuments(input.context),
+                question: (input: { question: string; context: Document[] }) =>
+                    input.question,
+            },
             prompt,
-            outputParser: new StringOutputParser(),
-        });
+            this.llm,
+            new StringOutputParser(),
+        ]);
 
-        // Start LangChain-Stream
+        // Start LangChain event stream
         const eventStream = await ragChain.streamEvents(
             {
                 question: query,
@@ -107,11 +96,10 @@ export abstract class BaseAIService implements IAIService {
             },
             {
                 version: "v2",
-                // encoding: "text/event-stream", // Remove enconding to properly get it as event stream!!!!
             },
         );
 
-        // Iterate over events and return only text chunks
+        // Iterate over events and yield only text chunks
         for await (const event of eventStream) {
             // Plain string events
             if (typeof event === "string") {
@@ -122,25 +110,28 @@ export abstract class BaseAIService implements IAIService {
             // Structured events
             if (event && typeof event === "object") {
                 const e: any = event;
-                
+
                 // Handle different LLM streaming event types
                 if (
-                    (e.event === "on_chat_model_stream" || e.event === "on_llm_stream") &&
-                    e.data?.chunk?.content && typeof e.data.chunk.content === "string"
+                    (e.event === "on_chat_model_stream" ||
+                        e.event === "on_llm_stream") &&
+                    e.data?.chunk?.content &&
+                    typeof e.data.chunk.content === "string"
                 ) {
                     yield e.data.chunk.content;
                     continue;
                 }
-                // Used by Ollama
-                // Handle parser stream events (final output)
+                
+                // Handle parser stream events (final output from StringOutputParser)
                 if (
                     e.event === "on_parser_stream" &&
-                    e.data?.chunk && typeof e.data.chunk === "string"
+                    e.data?.chunk && 
+                    typeof e.data.chunk === "string"
                 ) {
                     yield e.data.chunk;
                     continue;
                 }
-                
+
                 // Some implementations wrap data as string JSON
                 if (typeof e.data === "string") {
                     try {
@@ -150,31 +141,28 @@ export abstract class BaseAIService implements IAIService {
                             continue;
                         }
                     } catch {
-                        // If it's plain text (not a JSON/array dump), yield
+                        // If it's plain text (not JSON/array), yield it
                         const s = e.data.trim();
-                        const looksLikeArray = s.startsWith("[") &&
-                            s.endsWith("]");
-                        const looksLikeJSON = s.startsWith("{") &&
-                            s.endsWith("}");
-                        if (!looksLikeArray && !looksLikeJSON) {
+                        const isStructured = 
+                            (s.startsWith("[") && s.endsWith("]")) ||
+                            (s.startsWith("{") && s.endsWith("}"));
+                        if (!isStructured) {
                             yield s;
                         }
                         continue;
                     }
                 }
             }
-            // Skip all other non-text events (do not stringify objects to avoid vectors)
         }
-        // Send sources as typed JSON object
+        
+        // Send sources metadata after streaming completes
         if (retrievedDocsWithScores.length > 0) {
             const sourcesEvent: RagSources = {
                 metadataType: "rag-sources",
-
                 sources: retrievedDocsWithScores.map(([doc, score], index) => ({
                     id: index + 1,
                     filename: doc.metadata?.filename ||
-                        path.basename(doc.metadata?.source) ||
-                        "",
+                        path.basename(doc.metadata?.source || ""),
                     page: doc.metadata?.page || doc.metadata?.page_number,
                     collection: doc.metadata?.collection_name || collectionName,
                     relevanceScore: Math.round(score * 1000) / 1000,
@@ -205,11 +193,23 @@ export abstract class BaseAIService implements IAIService {
                 Question: {question}
             `);
 
-            const ragChain = await createStuffDocumentsChain({
-                llm: this.llm,
+            // Helper to format documents
+            const formatDocuments = (docs: Document[]): string => {
+                return docs.map((doc) => doc.pageContent).join("\n\n");
+            };
+
+            // Create RAG chain using LCEL (LangChain 1.0)
+            const ragChain = RunnableSequence.from([
+                {
+                    context: (input: { question: string; context: Document[] }) =>
+                        formatDocuments(input.context),
+                    question: (input: { question: string; context: Document[] }) =>
+                        input.question,
+                },
                 prompt,
-                outputParser: new StringOutputParser(),
-            });
+                this.llm,
+                new StringOutputParser(),
+            ]);
 
             const response = await ragChain.invoke({
                 question: query,
@@ -257,14 +257,13 @@ export abstract class BaseAIService implements IAIService {
     }
 }
 
-const prompt = ChatPromptTemplate.fromTemplate(
-    `Answer the following question based on the provided context in the language of the Question: 
-    {context}
-    Question: {question}`,
-);
-
-// Helper function to create safe preview
-export function createSafePreview(content: string, maxLength: number = 150): string {
+/**
+ * Helper function to create safe preview text
+ */
+export function createSafePreview(
+    content: string,
+    maxLength: number = 150,
+): string {
     if (!content) return "";
 
     const cleanContent = content.replace(/\n/g, " ").trim();
