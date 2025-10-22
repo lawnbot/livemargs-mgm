@@ -99,7 +99,7 @@ export class ChromaManager {
     public async initialize(): Promise<void> {
         try {
             this.vectorStore = new Chroma(this.embeddings, {
-                url: this.config.url || process.env.CHROMA_URL,
+                url: this.config.url || process.env.CHROMA_URL,              
                 collectionName: this.collectionName,
                 collectionMetadata: { "hnsw:space": "cosine" },                
             });

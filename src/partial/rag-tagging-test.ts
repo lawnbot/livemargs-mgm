@@ -2,6 +2,9 @@ import { AIServiceType } from "../ai/ai-interface.js";
 import { getChromaManagerByServiceType } from "../db/chroma-mgm.js";
 import { DocumentClassifier } from "../ai/document-classifier.js";
 import { ProductCategory, PowerType, DocumentSpecificity } from "../models/document-tags.js";
+import dotenv from "dotenv";
+// Initialize dotenv to load environment variables from .env file
+dotenv.config()
 
 console.log("=".repeat(80));
 console.log("🔍 DOCUMENT TAGGING VERIFICATION SCRIPT");
