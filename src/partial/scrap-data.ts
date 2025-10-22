@@ -8,8 +8,18 @@ const chromaManager = await getChromaManagerByServiceType(
     AIServiceType.OLLAMA,
     "robot",
 );
+
 const collectionInfo = chromaManager.getCollectionInfo();
 await chromaManager.deleteCollection();
+
+const chromaManagerOPE = await getChromaManagerByServiceType(
+    AIServiceType.OLLAMA,
+    "ope",
+);
+await chromaManagerOPE.deleteCollection();
+
+
+
 await startFolderBasedRAGTraining(undefined, undefined);
 
 // const documents: Document[] = [{

@@ -4,6 +4,9 @@ import { OllamaEmbeddings } from "@langchain/ollama";
 import { Document } from "@langchain/core/documents";
 import { Embeddings } from "@langchain/core/embeddings";
 import { AIServiceType } from '../ai/ai-interface.js';
+import dotenv from "dotenv";
+// Initialize dotenv to load environment variables from .env file
+dotenv.config()
 
 export interface ChromaConfig {
     url?: string;
@@ -276,14 +279,15 @@ export async function deleteChromaCollection(
         // Use Chroma client directly for collection deletion
         const { ChromaClient } = await import("chromadb");
         const client = new ChromaClient({
-            path: process.env.CHROMA_URL,            
+            path: process.env.CHROMA_URL,
+
         });
 
         await client.deleteCollection({ name: collectionName });
         console.log(`Successfully deleted collection: ${collectionName}`);
     } catch (error) {
         console.error(`Error deleting collection ${collectionName}:`, error);
-        throw error;
+        //throw error;
     }
 }
 
