@@ -15,6 +15,9 @@ import { getChromaManagerByServiceType } from "../db/chroma-mgm.js";
 import { AIServiceType } from "../ai/ai-interface.js";
 import { createSafePreview } from "../ai/base-ai-service.js";
 import { AIServiceFactory } from "../ai/ai-factory.js";
+import { DocumentClassifier } from "../ai/document-classifier.js";
+import { DocumentTags } from "../models/document-tags.js";
+import { QueryClassifier } from "../ai/query-classifier.js";
 
 export const getAIResult = async (req: Request, res: Response) => {
     const { query } = req.body as { query: string };
@@ -29,42 +32,70 @@ export async function* startLangChainStream(
     collectionName: string = "robot-collection",
     aiServiceType: AIServiceType = AIServiceType.OPENAI,
 ): AsyncIterable<string | RagSources> {
-    
     // Extract topic from collectionName
-    const topic = collectionName.replace('-collection', '');
-    const chromaManager = await getChromaManagerByServiceType(aiServiceType, topic);
+    const topic = collectionName.replace("-collection", "");
+    const chromaManager = await getChromaManagerByServiceType(
+        aiServiceType,
+        topic,
+    );
     const vectorStore = chromaManager.getVectorStore();
-    
+
     if (!vectorStore) {
-        throw new Error('Vector store not initialized');
+        throw new Error("Vector store not initialized");
     }
 
     const actualCollectionName = chromaManager.getCollectionInfo().name;
-    console.log(`🔍 Using ChromaManager collection: ${actualCollectionName} (from folder: ${collectionName})`);
+    console.log(
+        `🔍 Using ChromaManager collection: ${actualCollectionName} (from folder: ${collectionName})`,
+    );
+
+    // Build intelligent search filter
+    const searchFilter = QueryClassifier.buildSearchFilter(query);
+    const modelInfo = QueryClassifier.extractModelFromQuery(query);
+
+    if (modelInfo.modelNumber) {
+        console.log(`🎯 Model-specific search for: ${modelInfo.modelNumber}`);
+    } else if (modelInfo.category) {
+        console.log(`📁 Category search for: ${modelInfo.category}`);
+    } else {
+        console.log(`🌐 General search`);
+    }
 
     // Get AI service instance
     const aiService = AIServiceFactory.createSpecificAIService(aiServiceType);
-    
-    // Search relevant documents
-    const retrievedDocsWithScores = await vectorStore.similaritySearchWithScore(query, 4);
 
-    // Debug: Log retrieved documents
-    console.log(
-        `🔍 Retrieved ${retrievedDocsWithScores.length} documents from collection ${actualCollectionName}`,
+    // Search relevant documents
+    //const retrievedDocsWithScores = await vectorStore.similaritySearchWithScore(query, 4);
+    // Search relevant documents WITH filter
+    const retrievedDocsWithScores = await vectorStore.similaritySearchWithScore(
+        query,
+        4,
+        searchFilter, // Apply the intelligent filter
     );
+
+    // // Debug: Log retrieved documents
+    // console.log(
+    //     `🔍 Retrieved ${retrievedDocsWithScores.length} documents from collection ${actualCollectionName}`,
+    // );
+    
+    // Debug: Log retrieved documents with their classifications
+    console.log(`🔍 Retrieved ${retrievedDocsWithScores.length} documents from collection ${actualCollectionName}`);
+    retrievedDocsWithScores.forEach(([doc, score], idx) => {
+        console.log(`  ${idx + 1}. [${doc.metadata.specificity}] ${doc.metadata.model_number || 'N/A'} - Score: ${score.toFixed(4)}`);
+    });
 
     // Delegate to BaseAIService implementation to avoid duplication
     yield* aiService.generateRAGStreamResponseWithSources(
         query,
         actualCollectionName,
-        retrievedDocsWithScores
+        retrievedDocsWithScores,
     );
 }
 
 // https://www.robinwieruch.de/langchain-javascript-stream-structured/
 export const streamAIResult = async (req: Request, res: Response) => {
     const { query } = req.body as { query: string };
-    
+
     // Set headers for streaming
     let headers = new Map<string, string>();
     headers.set("Connection", "keep-alive");
@@ -74,27 +105,40 @@ export const streamAIResult = async (req: Request, res: Response) => {
     res.setHeaders(headers);
 
     // Use ChromaManager-based streaming
-    const aiServiceType = (process.env.AI_SERVICE_TYPE?.toLowerCase() === 'ollama') 
-        ? AIServiceType.OLLAMA 
-        : AIServiceType.OPENAI;
-    
+    const aiServiceType =
+        (process.env.AI_SERVICE_TYPE?.toLowerCase() === "ollama")
+            ? AIServiceType.OLLAMA
+            : AIServiceType.OPENAI;
+
     try {
-        for await (const chunk of startLangChainStream(query, "robot-collection", aiServiceType)) {
+        for await (
+            const chunk of startLangChainStream(
+                query,
+                "robot-collection",
+                aiServiceType,
+            )
+        ) {
             console.log(`${chunk}|`);
             res.write(chunk);
         }
     } catch (error) {
-        console.error('Stream error:', error);
-        res.status(500).send('Internal Server Error');
+        console.error("Stream error:", error);
+        res.status(500).send("Internal Server Error");
         return;
     }
 
     res.end();
 };
 
-async function llmSearch(query: string, aiServiceType: AIServiceType = AIServiceType.OPENAI): Promise<string> {
+async function llmSearch(
+    query: string,
+    aiServiceType: AIServiceType = AIServiceType.OPENAI,
+): Promise<string> {
     // Use ChromaManager approach
-    const chromaManager = await getChromaManagerByServiceType(aiServiceType, 'robot');
+    const chromaManager = await getChromaManagerByServiceType(
+        aiServiceType,
+        "robot",
+    );
     const retrievedDocs = await chromaManager.similaritySearch(query);
 
     // Get AI service and use its RAG functionality
@@ -121,6 +165,14 @@ function extractDocumentMetadata(
     const pageNumber = doc.metadata.page || doc.metadata.loc?.pageNumber ||
         null;
 
+    // Classify the document
+    const documentTags: DocumentTags = DocumentClassifier.classifyDocument(
+        filename,
+        filePath,
+        doc.pageContent,
+        collectionName,
+    );
+
     return {
         ...doc.metadata,
         filename: filename,
@@ -134,6 +186,8 @@ function extractDocumentMetadata(
         load_timestamp: new Date().toISOString(),
         file_size_chars: doc.pageContent.length,
         content_hash: doc.pageContent.slice(0, 100), // First 100 chars as identifier
+        // Add classification tags
+        ...documentTags,
     };
 }
 
@@ -214,21 +268,22 @@ async function processCollection(
         );
 
         // Determine AI service type from environment or default to OpenAI
-        const aiServiceType = (process.env.AI_SERVICE_TYPE?.toLowerCase() === 'ollama') 
-            ? AIServiceType.OLLAMA 
-            : AIServiceType.OPENAI;
+        const aiServiceType =
+            (process.env.AI_SERVICE_TYPE?.toLowerCase() === "ollama")
+                ? AIServiceType.OLLAMA
+                : AIServiceType.OPENAI;
 
         // Get ChromaManager with consistent naming
         // collectionFolder (e.g. "robot-collection") becomes topic "robot"
-        const topic = collectionFolder.replace('-collection', '');
-        
+        const topic = collectionFolder.replace("-collection", "");
+
         console.log(`📁 File structure folder: ${collectionFolder}`);
         console.log(`🏷️ Chroma topic: ${topic}`);
         console.log(`🤖 AI Service: ${aiServiceType}`);
 
         const chromaManager = await getChromaManagerByServiceType(
             aiServiceType,
-            topic
+            topic,
         );
 
         const chromaCollectionName = chromaManager.getCollectionInfo().name;
@@ -293,7 +348,7 @@ async function processCollection(
                 doc,
                 index,
                 collectionFolder,
-                chromaCollectionName // Add actual Chroma collection name
+                chromaCollectionName, // Add actual Chroma collection name
             );
             return new Document({
                 pageContent: doc.pageContent,
@@ -340,7 +395,7 @@ async function processCollection(
                     file_structure_folder: collectionFolder, // Original folder name
                     chroma_collection: chromaCollectionName, // Actual Chroma collection
                     topic: topic, // Extracted topic
-                    ai_service_type: aiServiceType // AI service used
+                    ai_service_type: aiServiceType, // AI service used
                 });
 
                 return new Document({
@@ -362,7 +417,9 @@ async function processCollection(
         );
 
         // Use ChromaManager instead of direct Chroma instantiation
-        console.log("🚀 Starting to add documents to Chroma via ChromaManager...");
+        console.log(
+            "🚀 Starting to add documents to Chroma via ChromaManager...",
+        );
 
         // Process in smaller batches to avoid overloading Chroma
         const batchSize = 5;
@@ -377,12 +434,14 @@ async function processCollection(
                 console.log(
                     `📦 Processing batch ${batchNum}/${totalBatches} (${batch.length} docs)`,
                 );
-                
+
                 // Use ChromaManager's addDocuments method
                 await chromaManager.addDocuments(batch);
-                
+
                 successCount += batch.length;
-                console.log(`✅ Batch ${batchNum} added successfully to ${chromaCollectionName}`);
+                console.log(
+                    `✅ Batch ${batchNum} added successfully to ${chromaCollectionName}`,
+                );
             } catch (batchError) {
                 console.error(`❌ Error in batch ${batchNum}:`, batchError);
 
@@ -392,7 +451,9 @@ async function processCollection(
                         await chromaManager.addDocuments([batch[j]]);
                         successCount++;
                         console.log(
-                            `✅ Individual document ${i + j + 1} added to ${chromaCollectionName}`,
+                            `✅ Individual document ${
+                                i + j + 1
+                            } added to ${chromaCollectionName}`,
                         );
                     } catch (docError) {
                         console.error(
@@ -494,12 +555,17 @@ export async function deleteChromaCollection(
 ): Promise<void> {
     try {
         // Extract topic from collection name
-        const topic = collectionName.replace('-collection', '');
-        const chromaManager = await getChromaManagerByServiceType(aiServiceType, topic);
-        
+        const topic = collectionName.replace("-collection", "");
+        const chromaManager = await getChromaManagerByServiceType(
+            aiServiceType,
+            topic,
+        );
+
         // Use ChromaManager's delete functionality
         await chromaManager.deleteCollection();
-        console.log(`Successfully deleted collection: ${chromaManager.getCollectionInfo().name}`);
+        console.log(
+            `Successfully deleted collection: ${chromaManager.getCollectionInfo().name}`,
+        );
     } catch (error) {
         console.error(`Error deleting collection ${collectionName}:`, error);
         throw error;
@@ -512,13 +578,18 @@ export async function clearChromaCollection(
 ): Promise<void> {
     try {
         // Extract topic from collection name
-        const topic = collectionName.replace('-collection', '');
-        const chromaManager = await getChromaManagerByServiceType(aiServiceType, topic);
-        
+        const topic = collectionName.replace("-collection", "");
+        const chromaManager = await getChromaManagerByServiceType(
+            aiServiceType,
+            topic,
+        );
+
         // Delete and recreate collection to clear it
         await chromaManager.deleteCollection();
         // ChromaManager will automatically recreate the collection when needed
-        console.log(`Successfully cleared collection: ${chromaManager.getCollectionInfo().name}`);
+        console.log(
+            `Successfully cleared collection: ${chromaManager.getCollectionInfo().name}`,
+        );
     } catch (error) {
         console.error(`Error clearing collection ${collectionName}:`, error);
         throw error;
