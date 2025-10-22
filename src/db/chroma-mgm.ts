@@ -101,16 +101,37 @@ export class ChromaManager {
      */
     public async initialize(): Promise<void> {
         try {
+            // Get embedding function name for ChromaDB
+            const embeddingFunction = this.getEmbeddingFunctionName();
+            
             this.vectorStore = new Chroma(this.embeddings, {
                 url: this.config.url || process.env.CHROMA_URL,              
                 collectionName: this.collectionName,
-                collectionMetadata: { "hnsw:space": "cosine" },                
+                collectionMetadata: { 
+                    "hnsw:space": "cosine",
+                    "embedding_function": embeddingFunction,
+                    "embedding_model": this.config.embeddingModel || this.getDefaultModelFromEnv(this.config.aiServiceType)
+                },
             });
             
-            console.log(`Initialized Chroma collection: ${this.collectionName}`);
+            console.log(`Initialized Chroma collection: ${this.collectionName} with ${embeddingFunction}`);
         } catch (error) {
             console.error(`Failed to initialize Chroma for ${this.config.aiServiceType}:`, error);
             throw error;
+        }
+    }
+
+    /**
+     * Get embedding function name for ChromaDB metadata
+     */
+    private getEmbeddingFunctionName(): string {
+        switch (this.config.aiServiceType) {
+            case AIServiceType.OPENAI:
+                return "openai";
+            case AIServiceType.OLLAMA:
+                return "ollama";
+            default:
+                return "default";
         }
     }
 

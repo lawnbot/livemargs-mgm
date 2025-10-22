@@ -47,15 +47,20 @@ export interface DocumentTags {
 
 /**
  * Model number patterns by category
+ * Pattern explanation: (?:^|[^A-Z0-9]) - start or non-alphanumeric (non-capturing)
+ *                      (PREFIX) - capturing group 1: model prefix
+ *                      -? - optional hyphen
+ *                      (NUMBER) - capturing group 2: model number
+ *                      (?:[^A-Z0-9]|$) - non-alphanumeric or end (non-capturing)
  */
 export const MODEL_PATTERNS = {
     [ProductCategory.ROBOT]: {
-        pattern: /\b(TM|RP|BM|BP|EG)-(\d{3,4})\b/gi,
+        pattern: /(?:^|[^A-Z0-9-])(TM|RP|BM|BP|EG)-?(\d{3,4})(?:[^A-Z0-9]|$)/gi,
         series: ["TM", "RP", "BM", "BP", "EG"],
     },
     [ProductCategory.OPE]: {
         pattern:
-            /\b(CS|PPT|SRM|GT|PAS|PB|ES|HCA|HC|HCR|HCAS|HCS|CSG|MB|DCS|DPS|DPAS|DTT|DPPF|DPPT|DSRM|DLM|DPB|DHC|DHCA|DHCAS|DHCS|RP|LBP|LCJQ)-(\d+[A-Z]*)\b/gi,
+            /(?:^|[^A-Z0-9-])(CS|PPT|SRM|GT|PAS|PB|ES|HCA|HC|HCR|HCAS|HCS|CSG|MB|DCS|DPS|DPAS|DTT|DPPF|DPPT|DSRM|DLM|DPB|DHC|DHCA|DHCAS|DHCS|RP|LBP|LCJQ)-?(\d+[A-Z]*)(?:[^A-Z0-9]|$)/gi,
         series: [
             "CS",
             "PPT",
@@ -91,7 +96,7 @@ export const MODEL_PATTERNS = {
     },
     [ProductCategory.ERCO]: {
         pattern:
-            /\b(EB|ES|LG|EWB|EKM|SP|GHX|STF|ETM|EWM|ERM|ERSS|FM|KAH|SWZ)-(\d+[A-Z]*)\b/gi,
+            /(?:^|[^A-Z0-9-])(EB|ES|LG|EWB|EKM|SP|GHX|STF|ETM|EWM|ERM|ERSS|FM|KAH|SWZ)-?(\d+[A-Z]*)(?:[^A-Z0-9]|$)/gi,
         series: [
             "EB",
             "ES",

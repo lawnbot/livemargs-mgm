@@ -17,10 +17,17 @@ export class QueryClassifier {
         
         // Try each category pattern
         for (const [category, pattern] of Object.entries(MODEL_PATTERNS)) {
-            const match = upperQuery.match(pattern.pattern);
+            // Reset regex state (important for global flag)
+            pattern.pattern.lastIndex = 0;
+            
+            // Use exec() instead of match() to get capture groups
+            const match = pattern.pattern.exec(upperQuery);
             if (match) {
+                // match[1] is the prefix, match[2] is the number
+                // Reconstruct the model number with hyphen and trim whitespace
+                const modelNumber = `${match[1]}-${match[2]}`.trim();
                 return {
-                    modelNumber: match[0],
+                    modelNumber: modelNumber,
                     category: category as ProductCategory
                 };
             }
@@ -36,27 +43,45 @@ export class QueryClassifier {
         const { modelNumber, category } = this.extractModelFromQuery(query);
         
         if (modelNumber) {
-            // Product-specific query: search for exact model OR category-common docs
+            // Product-specific query: ONLY exact model OR category-common/general docs for that category
+            // Explicitly exclude product-specific docs from other models
             return {
                 $or: [
-                    { model_number: modelNumber },
+                    // Exact model match
+                    { model_number: { $eq: modelNumber } },
+                    // Category-common docs (not product-specific)
                     { 
-                        specificity: DocumentSpecificity.CATEGORY_COMMON,
-                        product_category: category
+                        $and: [
+                            { specificity: { $eq: DocumentSpecificity.CATEGORY_COMMON } },
+                            { product_category: { $eq: category } }
+                        ]
+                    },
+                    // General docs (not product-specific)
+                    { 
+                        $and: [
+                            { specificity: { $eq: DocumentSpecificity.GENERAL } },
+                            { product_category: { $eq: category } }
+                        ]
                     }
                 ]
             };
         } else if (category) {
-            // Category query: exclude product-specific docs from other categories
+            // Category query: include category docs but exclude product-specific from other categories
             return {
-                $or: [
-                    { product_category: category },
-                    { specificity: DocumentSpecificity.GENERAL }
+                $and: [
+                    {
+                        $or: [
+                            { product_category: { $eq: category } },
+                            { specificity: { $eq: DocumentSpecificity.GENERAL } }
+                        ]
+                    },
+                    // Exclude product-specific docs (they should only appear for exact model queries)
+                    { specificity: { $ne: DocumentSpecificity.PRODUCT_SPECIFIC } }
                 ]
             };
         }
         
-        // General query: prefer general and category-common docs
+        // General query: ONLY general and category-common docs, exclude all product-specific
         return {
             specificity: {
                 $in: [DocumentSpecificity.GENERAL, DocumentSpecificity.CATEGORY_COMMON]

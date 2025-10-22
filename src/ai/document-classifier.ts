@@ -28,7 +28,10 @@ export class DocumentClassifier {
         const modelNumbers = new Set<string>();
 
         for (const match of matches) {
-            modelNumbers.add(match[0].toUpperCase());
+            // match[1] is the prefix (e.g., "CS"), match[2] is the number (e.g., "4010")
+            // Reconstruct the full model number with hyphen
+            const modelNumber = `${match[1]}-${match[2]}`.toUpperCase();
+            modelNumbers.add(modelNumber);
         }
 
         return Array.from(modelNumbers);
@@ -190,16 +193,24 @@ export class DocumentClassifier {
             content,
         );
 
-        // Extract model numbers
-        const modelNumbers = category
+        // PRIORITY 1: Extract model number from filename first (most reliable)
+        const filenameModels = category
+            ? this.extractModelNumbers(filename, category)
+            : [];
+        
+        // PRIORITY 2: Extract from content (for documents without model in filename)
+        const contentModels = category && filenameModels.length === 0
             ? this.extractModelNumbers(content, category)
             : [];
+        
+        // Combine: prefer filename models, fallback to content models
+        const modelNumbers = filenameModels.length > 0 ? filenameModels : contentModels;
         const primaryModel = modelNumbers[0] || null;
 
         // Detect power type (now with model-based detection)
         const powerType = this.detectPowerType(content, primaryModel, category);
 
-        // Determine specificity
+        // Determine specificity (using filename to prioritize)
         const specificity = this.detectSpecificity(
             modelNumbers,
             category,

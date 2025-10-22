@@ -17,8 +17,10 @@ const testResults = async () => {
         
         const stream = await startLangChainStream(
             //"Wie update ich die RTK-Basis?",
-            "Wie update ich die Akku-Firmware?",
-            "robot-collection", // Explicitly specify collection
+            //"Wie update ich die Akku-Firmware?",
+            //"robot-collection", // Explicitly specify collection
+            "Vorteile der DTT-2100",
+            "ope-collection",
             AIServiceType.OLLAMA // Explicitly specify Ollama
         );
         for await (const chunk of stream) {
