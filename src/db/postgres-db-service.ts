@@ -57,10 +57,22 @@ export class PostgresDBService {
                 edit_timestamp BIGINT,
                 room_name VARCHAR(255) NOT NULL,
                 expires_at TIMESTAMP NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                -- For RAG support
-                rag_sources JSONB -- PostgreSQL JSONB for efficient JSON storage and querying
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
+        `);
+
+        // Add rag_sources column if it doesn't exist (for existing tables)
+        await client.query(`
+            DO $$ 
+            BEGIN 
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name = 'chat_messages' 
+                    AND column_name = 'rag_sources'
+                ) THEN 
+                    ALTER TABLE chat_messages ADD COLUMN rag_sources JSONB;
+                END IF;
+            END $$;
         `);
 
         // Create chat_rooms table
@@ -93,16 +105,17 @@ export class PostgresDBService {
             ON chat_messages(expires_at)
         `);
 
-        // JSONB indexes for efficient RAG queries
+        // JSONB indexes for efficient RAG queries (only if column exists)
         await client.query(`
             CREATE INDEX IF NOT EXISTS idx_chat_messages_rag_sources_gin 
             ON chat_messages USING gin(rag_sources)
         `);
 
-        // Specific index for collection name queries (flat format)
+        // Specific index for collection name queries using jsonb_path_ops
         await client.query(`
             CREATE INDEX IF NOT EXISTS idx_chat_messages_rag_collection_name 
-            ON chat_messages USING gin((rag_sources->>'collectionName'))
+            ON chat_messages ((rag_sources->>'collectionName'))
+            WHERE rag_sources IS NOT NULL
         `);
 
         await client.query(`
@@ -197,9 +210,7 @@ export class PostgresDBService {
                     editTimestamp: row.edit_timestamp,
                     roomName: row.room_name,
                     expiresAt: row.expires_at,
-                    ragSources: row.rag_sources
-                        ? JSON.parse(row.rag_sources) as RagSources
-                        : undefined,
+                    ragSources: row.rag_sources as RagSources | undefined,
                 };
 
                 return ChatMessage.sanitize(baseMessage) as ChatMessageSchema;
@@ -246,7 +257,7 @@ export class PostgresDBService {
                     editTimestamp: row.edit_timestamp,
                     roomName: row.room_name,
                     expiresAt: row.expires_at,
-                    ragSources: JSON.parse(row.rag_sources) as RagSources,
+                    ragSources: row.rag_sources as RagSources,
                 };
 
                 return ChatMessage.sanitize(baseMessage) as ChatMessageSchema;
