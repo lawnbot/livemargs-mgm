@@ -29,13 +29,48 @@ routes.get("/health", healthcheck);
 // Host App Links with correct Content-Type Headers
 // Requires HTTPS. HTTP is not possible!
 routes.get("/.well-known/apple-app-site-association", (req, res) => {
-  res.setHeader("Content-Type", "application/json");
-  res.sendFile(path.join(WELL_KNOWN_PATH, "apple-app-site-association"));
+  const filePath = path.join(WELL_KNOWN_PATH, "apple-app-site-association");
+  
+  // console.log("Apple App Site Association requested");
+  // console.log("WELL_KNOWN_PATH:", WELL_KNOWN_PATH);
+  // console.log("Full path:", filePath);
+  // console.log("File exists:", fs.existsSync(filePath));
+  
+  if (!fs.existsSync(filePath)) {
+    console.error("File not found:", filePath);
+    return res.status(404).json({ error: "File not found", path: filePath });
+  }
+  
+  try {
+    const content = fs.readFileSync(filePath, 'utf8');
+    res.setHeader("Content-Type", "application/json");
+    res.send(content);
+  } catch (err) {
+    console.error("Error reading apple-app-site-association:", err);
+    res.status(500).json({ error: "Failed to read file", message: (err as Error).message });
+  }
 });
 
 routes.get("/.well-known/assetlinks.json", (req, res) => {
-  res.setHeader("Content-Type", "application/json");
-  res.sendFile(path.join(WELL_KNOWN_PATH, "assetlinks.json"));
+  const filePath = path.join(WELL_KNOWN_PATH, "assetlinks.json");
+  
+  // console.log("Assetlinks.json requested");
+  // console.log("Full path:", filePath);
+  // console.log("File exists:", fs.existsSync(filePath));
+  
+  if (!fs.existsSync(filePath)) {
+    console.error("File not found:", filePath);
+    return res.status(404).json({ error: "File not found", path: filePath });
+  }
+  
+  try {
+    const content = fs.readFileSync(filePath, 'utf8');
+    res.setHeader("Content-Type", "application/json");
+    res.send(content);
+  } catch (err) {
+    console.error("Error reading assetlinks.json:", err);
+    res.status(500).json({ error: "Failed to read file", message: (err as Error).message });
+  }
 });
 
 // Fallback for other .well-known files
