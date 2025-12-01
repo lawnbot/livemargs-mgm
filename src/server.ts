@@ -137,6 +137,39 @@ wss.on(
           ws.send(JSON.stringify(wsFb));
         }
       }
+      if (command === "get-sw-access-keys") {
+        const fbCommand: string = "fb-get-sw-access-keys";
+        const [blockAccess, jwtEmail] = getModeratorTokenPermission(user);
+        if (blockAccess) {
+          const wsFb: WSFeedback = {
+            fbStatus: FbStatus.Error,
+            originalCommand: "get-sw-access-keys",
+            fbCommand: fbCommand,
+            fbMessage: "Access denied: invalid or missing moderator token.",
+          };
+          ws.send(JSON.stringify(wsFb));
+        } else {
+          try {
+            const keys = process.env.SHOPWARE_ACCESS_KEYS ?? "[]";
+            const wsFb: WSFeedback = {
+              fbStatus: FbStatus.Okay,
+              originalCommand: "get-sw-access-keys",
+              fbCommand: fbCommand,
+              fbMessage: "Retrieved SHOPWARE_ACCESS_KEYS.",
+              fbData: keys,
+            };
+            ws.send(JSON.stringify(wsFb));
+          } catch (e) {
+            const wsFb: WSFeedback = {
+              fbStatus: FbStatus.Error,
+              originalCommand: "get-sw-access-keys",
+              fbCommand: fbCommand,
+              fbMessage: "Could not retrieve SHOPWARE_ACCESS_KEYS.",
+            };
+            ws.send(JSON.stringify(wsFb));
+          }
+        }
+      }
 
       if (command === "protected-moderator-get-all-rooms") {
         const [blockAccess, jwtEmail] = getModeratorTokenPermission(user);
@@ -712,8 +745,47 @@ server.on("upgrade", (request, socket, head) => {
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
-app.use(cors());
+
+// Configure CORS to allow embedding from different domains
+// Native apps (Android/iOS) don't send Origin header, so we need to handle that
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like native mobile apps, curl, Postman)
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    // If ALLOWED_ORIGINS is set, check against the list
+    const allowedOrigins = process.env.ALLOWED_ORIGINS;
+    if (allowedOrigins && allowedOrigins !== '*') {
+      const origins = allowedOrigins.split(',').map(o => o.trim());
+      if (origins.indexOf(origin) !== -1) {
+        return callback(null, true);
+      }
+      return callback(new Error('Not allowed by CORS'));
+    }
+
+    // If ALLOWED_ORIGINS is '*' or not set, allow all origins
+    return callback(null, true);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+}));
+
+// Build CSP directives dynamically so we can allow embedding from specific shop domains via env
+const frameAncestorsEnv = process.env.FRAME_ANCESTORS; // comma-separated list of allowed ancestors, e.g. https://shop.example.com,https://www.shop.example.com
+const frameAncestors = frameAncestorsEnv
+  ? frameAncestorsEnv.split(',').map((o) => o.trim()).filter(Boolean)
+  : ["'self'"]; // default deny cross-origin framing
+
+// Allow additional LiveKit endpoints (HTTPS+WSS) if needed
+const livekitHosts = process.env.LIVEKIT_HOSTS
+  ? process.env.LIVEKIT_HOSTS.split(',').map((s) => s.trim()).filter(Boolean)
+  : [];
+
 app.use(helmet({
+  frameguard: false, // Disable X-Frame-Options (SAMEORIGIN) so CSP frame-ancestors can control embedding
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
@@ -743,12 +815,12 @@ app.use(helmet({
         "'self'",
         "https://www.gstatic.com",
         "https://fonts.gstatic.com",
-        "https://livekit.echo-motorgeraete.de", // Add your LiveKit server
-        "wss://livekit.echo-motorgeraete.de", // Add WebSocket endpoint
+        ...livekitHosts,
         "wss:", // For WebSocket connections
         "ws:",
       ],
-      frameSrc: ["'self'"],
+      // frame-ancestors controls who is allowed to embed THIS app in an iframe
+      frameAncestors: frameAncestors,
       objectSrc: ["'none'"],
       upgradeInsecureRequests: [],
     },
