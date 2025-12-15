@@ -48,3 +48,8 @@ export enum TicketStatus {
     waitingOnFeedback = 1,
     closed = 2,
 }
+
+export enum RoomType {
+    Standard = "standard",
+    WhatsApp = "whatsapp",
+}

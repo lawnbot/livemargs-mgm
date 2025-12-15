@@ -6,6 +6,7 @@ import { livemargsRouter } from "./livekit-routes.js";
 import { authRouter } from "./auth-routes.js";
 import { healthcheck } from "../controllers/generic.js";
 import { fileManagementRoutes } from "./file-mgm-routes.js";
+import { whatsappRouter } from "./whatsapp-routes.js";
 
 // Consistent with file-mgm.ts approach
 const UPLOAD_BASE = path.resolve(process.env.UPLOAD_DIR || "uploads");
@@ -23,6 +24,7 @@ routes.use(authRouter);
 routes.use(livemargsRouter);
 routes.use(aiRoutes);
 routes.use(fileManagementRoutes);
+routes.use(whatsappRouter);
 
 routes.get("/health", healthcheck);
 

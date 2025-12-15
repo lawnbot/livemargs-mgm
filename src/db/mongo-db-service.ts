@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 import { Collection, MongoClient } from "mongodb";
 import { ChatMessage, ChatMessageSchema } from "../models/chat-message.js";
 import { RoomDetails, RoomDetailsSchema } from "../models/room-details.js";
+import { WhatsAppMessage, WhatsAppMessageSchema } from "../models/whatsapp-message.js";
 
 dotenv.config();
 const MONGODB_URI = process.env.MONGODB_URI ||
@@ -13,6 +14,7 @@ export class MongoDBService {
     private mongoClient: MongoClient;
     private chatMessageCollection: Collection<ChatMessageSchema>;
     private chatRoomsCollection: Collection<RoomDetailsSchema>;
+    private whatsappMessageCollection: Collection<WhatsAppMessageSchema>;
 
     constructor() {
         this.mongoClient = new MongoClient(MONGODB_URI);
@@ -23,6 +25,10 @@ export class MongoDBService {
         this.chatRoomsCollection = this.mongoClient.db(dbName).collection<
             RoomDetailsSchema
         >("chatRooms");
+
+        this.whatsappMessageCollection = this.mongoClient.db(dbName).collection<
+            WhatsAppMessageSchema
+        >("whatsappMessages");
     }
 
     async connect(): Promise<void> {
@@ -53,6 +59,24 @@ export class MongoDBService {
                 "ragSources.sources.filename": 1,
             });
 
+            // Create indexes for WhatsApp messages
+            await this.whatsappMessageCollection.createIndex({
+                phoneNumber: 1,
+                timestamp: 1,
+            });
+
+            await this.whatsappMessageCollection.createIndex({
+                roomName: 1,
+            });
+
+            await this.whatsappMessageCollection.createIndex({
+                whatsappMessageId: 1,
+            });
+
+            // Ensure TTL index for WhatsApp messages
+            await this.whatsappMessageCollection.createIndex({ expiresAt: 1 }, {
+                expireAfterSeconds: 0,
+            });
 
         } catch (e) {
             console.log("Could not connect to Mongo DB: " + e);
@@ -109,6 +133,62 @@ export class MongoDBService {
         }).sort({
             timestamp: 1,
         }).toArray();
+    }
+
+    // WhatsApp message methods
+    async saveWhatsAppMessage(message: WhatsAppMessage): Promise<void> {
+        const now = Date.now();
+        const ttlSeconds: number = 157788000; // 5 years
+
+        const sanitizedMessage = WhatsAppMessage.sanitize(message);
+        if (!WhatsAppMessage.isValid(sanitizedMessage)) {
+            throw new Error("Invalid WhatsAppMessage format");
+        }
+
+        await this.whatsappMessageCollection.insertOne({
+            ...sanitizedMessage,
+            expiresAt: new Date(now + ttlSeconds * 1000),
+        });
+    }
+
+    async getWhatsAppMessagesByPhoneNumber(
+        phoneNumber: string,
+    ): Promise<WhatsAppMessageSchema[]> {
+        return await this.whatsappMessageCollection.find({
+            phoneNumber,
+            expiresAt: { $gt: new Date() },
+        }).sort({
+            timestamp: 1,
+        }).toArray();
+    }
+
+    async updateWhatsAppMessageStatus(
+        whatsappMessageId: string,
+        updateFields: Partial<WhatsAppMessage>,
+    ): Promise<void> {
+        const updateDoc: any = {};
+
+        if (updateFields.status !== undefined) {
+            updateDoc.status = updateFields.status;
+        }
+        if (updateFields.deliveredAt !== undefined) {
+            updateDoc.deliveredAt = updateFields.deliveredAt;
+        }
+        if (updateFields.readAt !== undefined) {
+            updateDoc.readAt = updateFields.readAt;
+        }
+        if (updateFields.failedReason !== undefined) {
+            updateDoc.failedReason = updateFields.failedReason;
+        }
+
+        if (Object.keys(updateDoc).length === 0) {
+            return;
+        }
+
+        await this.whatsappMessageCollection.updateOne(
+            { whatsappMessageId },
+            { $set: updateDoc }
+        );
     }
 
     async close() {

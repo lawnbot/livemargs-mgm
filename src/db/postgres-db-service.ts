@@ -3,6 +3,7 @@ import { Pool, PoolClient } from "pg";
 import { ChatMessage, ChatMessageSchema } from "../models/chat-message.js";
 import { RoomDetails, RoomDetailsSchema } from "../models/room-details.js";
 import { RagSources } from "../models/rag-sources.js";
+import { WhatsAppMessage, WhatsAppMessageSchema } from "../models/whatsapp-message.js";
 
 // Initialize dotenv to load environment variables from .env file
 dotenv.config();
@@ -132,6 +133,54 @@ export class PostgresDBService {
             CREATE INDEX IF NOT EXISTS idx_chat_rooms_expires_at 
             ON chat_rooms(expires_at)
         `);
+
+        // Create whatsapp_messages table
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS whatsapp_messages (
+                id SERIAL PRIMARY KEY,
+                message_id VARCHAR(255) NOT NULL UNIQUE,
+                whatsapp_message_id VARCHAR(255) NOT NULL,
+                phone_number VARCHAR(50) NOT NULL,
+                room_name VARCHAR(255) NOT NULL,
+                text TEXT,
+                media_url TEXT,
+                media_type VARCHAR(50),
+                file_name TEXT,
+                file_size BIGINT,
+                mime_type VARCHAR(100),
+                caption TEXT,
+                direction VARCHAR(20) NOT NULL,
+                status VARCHAR(20) NOT NULL,
+                timestamp BIGINT NOT NULL,
+                delivered_at BIGINT,
+                read_at BIGINT,
+                failed_reason TEXT,
+                expires_at TIMESTAMP NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        // Create indexes for WhatsApp messages
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_phone_number 
+            ON whatsapp_messages(phone_number)
+        `);
+
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_room_name 
+            ON whatsapp_messages(room_name)
+        `);
+
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_whatsapp_message_id 
+            ON whatsapp_messages(whatsapp_message_id)
+        `);
+
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_expires_at 
+            ON whatsapp_messages(expires_at)
+        `);
+
         // Set up automatic cleanup job (PostgreSQL equivalent of MongoDB TTL)
         // This would typically be handled by a separate cron job or scheduled task
         // For now, we'll add a helper method to clean expired records
@@ -396,14 +445,157 @@ export class PostgresDBService {
                 "DELETE FROM chat_rooms WHERE expires_at <= NOW()",
             );
 
+            // Clean up expired WhatsApp messages
+            const whatsappMessagesResult = await this.pool.query(
+                "DELETE FROM whatsapp_messages WHERE expires_at <= NOW()",
+            );
+
             console.log(
                 `Cleaned up ${chatMessagesResult.rowCount} expired chat messages`,
             );
             console.log(
                 `Cleaned up ${chatRoomsResult.rowCount} expired chat rooms`,
             );
+            console.log(
+                `Cleaned up ${whatsappMessagesResult.rowCount} expired WhatsApp messages`,
+            );
         } catch (error) {
             console.error("Error cleaning up expired records:", error);
+            throw error;
+        }
+    }
+
+    // WhatsApp message methods
+    async saveWhatsAppMessage(message: WhatsAppMessage): Promise<void> {
+        const now = Date.now();
+        const ttlSeconds: number = 157788000; // 5 years
+        const expiresAt = new Date(now + ttlSeconds * 1000);
+
+        const sanitizedMessage = WhatsAppMessage.sanitize(message);
+        const query = `
+            INSERT INTO whatsapp_messages (
+                message_id, whatsapp_message_id, phone_number, room_name,
+                text, media_url, media_type, file_name, file_size, mime_type,
+                caption, direction, status, timestamp, delivered_at, read_at,
+                failed_reason, expires_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+        `;
+
+        const values = [
+            sanitizedMessage.messageId,
+            sanitizedMessage.whatsappMessageId,
+            sanitizedMessage.phoneNumber,
+            sanitizedMessage.roomName,
+            sanitizedMessage.text || null,
+            sanitizedMessage.mediaUrl || null,
+            sanitizedMessage.mediaType || null,
+            sanitizedMessage.fileName || null,
+            sanitizedMessage.fileSize || null,
+            sanitizedMessage.mimeType || null,
+            sanitizedMessage.caption || null,
+            sanitizedMessage.direction,
+            sanitizedMessage.status,
+            sanitizedMessage.timestamp,
+            sanitizedMessage.deliveredAt || null,
+            sanitizedMessage.readAt || null,
+            sanitizedMessage.failedReason || null,
+            expiresAt,
+        ];
+
+        try {
+            await this.pool.query(query, values);
+        } catch (error) {
+            console.error("Error saving WhatsApp message:", error);
+            throw error;
+        }
+    }
+
+    async getWhatsAppMessagesByPhoneNumber(
+        phoneNumber: string,
+    ): Promise<WhatsAppMessageSchema[]> {
+        const query = `
+            SELECT 
+                message_id, whatsapp_message_id, phone_number, room_name,
+                text, media_url, media_type, file_name, file_size, mime_type,
+                caption, direction, status, timestamp, delivered_at, read_at,
+                failed_reason, expires_at
+            FROM whatsapp_messages 
+            WHERE phone_number = $1 AND expires_at > NOW()
+            ORDER BY timestamp ASC
+        `;
+
+        try {
+            const result = await this.pool.query(query, [phoneNumber]);
+
+            return result.rows.map((row) => ({
+                messageId: row.message_id,
+                whatsappMessageId: row.whatsapp_message_id,
+                phoneNumber: row.phone_number,
+                roomName: row.room_name,
+                text: row.text,
+                mediaUrl: row.media_url,
+                mediaType: row.media_type,
+                fileName: row.file_name,
+                fileSize: row.file_size,
+                mimeType: row.mime_type,
+                caption: row.caption,
+                direction: row.direction,
+                status: row.status,
+                timestamp: row.timestamp,
+                deliveredAt: row.delivered_at,
+                readAt: row.read_at,
+                failedReason: row.failed_reason,
+                expiresAt: row.expires_at,
+            }));
+        } catch (error) {
+            console.error("Error getting WhatsApp messages:", error);
+            throw error;
+        }
+    }
+
+    async updateWhatsAppMessageStatus(
+        whatsappMessageId: string,
+        updateFields: Partial<WhatsAppMessage>,
+    ): Promise<void> {
+        const updates: string[] = [];
+        const values: any[] = [];
+        let paramIndex = 1;
+
+        if (updateFields.status !== undefined) {
+            updates.push(`status = $${paramIndex++}`);
+            values.push(updateFields.status);
+        }
+
+        if (updateFields.deliveredAt !== undefined) {
+            updates.push(`delivered_at = $${paramIndex++}`);
+            values.push(updateFields.deliveredAt);
+        }
+
+        if (updateFields.readAt !== undefined) {
+            updates.push(`read_at = $${paramIndex++}`);
+            values.push(updateFields.readAt);
+        }
+
+        if (updateFields.failedReason !== undefined) {
+            updates.push(`failed_reason = $${paramIndex++}`);
+            values.push(updateFields.failedReason);
+        }
+
+        if (updates.length === 0) {
+            return;
+        }
+
+        values.push(whatsappMessageId);
+        const query = `
+            UPDATE whatsapp_messages 
+            SET ${updates.join(", ")}
+            WHERE whatsapp_message_id = $${paramIndex}
+        `;
+
+        try {
+            await this.pool.query(query, values);
+        } catch (error) {
+            console.error("Error updating WhatsApp message status:", error);
             throw error;
         }
     }
