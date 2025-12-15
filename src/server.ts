@@ -25,6 +25,7 @@ import {
   sendChatMessageData,
   setModeratorHeartbeat,
   updateRoomMetadata,
+  updateParticipant
 } from "./controllers/livekit.js";
 import { RoomChannel, RoomDetails } from "./models/room-details.js";
 import { FbStatus, WSFeedback } from "./models/ws-feedback.js";
@@ -403,6 +404,44 @@ wss.on(
             originalCommand: "update-room-metadata",
             fbCommand: fbCommand,
             fbMessage: "Could not update room metadata.",
+          };
+          ws.send(JSON.stringify(wsFb));
+        }
+      }
+      if (command == "update-participant") {
+        interface MessageData {
+          roomName: string;
+          identity: string;
+          metadata?: string;
+          permission?: any;
+          name?: string;
+        }
+        const messageDataObj = messageData as MessageData;
+        const fbCommand: string = "fb-updating-participant";
+        
+        try {
+          const participantInfo = await updateParticipant(
+            messageDataObj.roomName,
+            messageDataObj.identity,
+            messageDataObj.metadata,
+            messageDataObj.permission,
+            messageDataObj.name,
+          );
+          
+          const wsFb: WSFeedback = {
+            fbStatus: FbStatus.Okay,
+            originalCommand: "update-participant",
+            fbCommand: fbCommand,
+            fbMessage: "Participant updated successfully.",
+            fbData: JSON.stringify(participantInfo),
+          };
+          ws.send(JSON.stringify(wsFb));
+        } catch (e) {
+          const wsFb: WSFeedback = {
+            fbStatus: FbStatus.Error,
+            originalCommand: "update-participant",
+            fbCommand: fbCommand,
+            fbMessage: "Could not update participant.",
           };
           ws.send(JSON.stringify(wsFb));
         }
