@@ -118,7 +118,7 @@ export const verifyToken = async (req: Request, res: Response) => {
     }
 };
 
-export const refreshToken = async (req: Request, res: Response) => {
+export const refreshJWT = async (req: Request, res: Response) => {
     const { refreshToken } = req.body;
     try {
         const payload = jwt.verify(refreshToken, process.env.JWT_SECRET!) as {
