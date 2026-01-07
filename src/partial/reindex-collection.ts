@@ -8,9 +8,18 @@ async function reindexCollection(collectionName: string) {
     try {
         console.log(`🗑️  Deleting old collection: ${collectionName}...`);
         
+  
+         // Use Chroma client directly for collection deletion
+        const chromaUrl = process.env.CHROMA_URL || "http://localhost:8000";
+        
+        // Parse URL for ChromaDB v2 API
+        const url = new URL(chromaUrl);
         const client = new ChromaClient({
-            path: process.env.CHROMA_URL || "http://localhost:8000",
+            host: url.hostname,
+            port: parseInt(url.port) || (url.protocol === 'https:' ? 443 : 80),
+            ssl: url.protocol === 'https:'
         });
+        
 
         // Try to delete the collection (will error if it doesn't exist, that's ok)
         try {

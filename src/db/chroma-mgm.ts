@@ -104,8 +104,20 @@ export class ChromaManager {
             // Get embedding function name for ChromaDB
             const embeddingFunction = this.getEmbeddingFunctionName();
             
+            // Parse URL for ChromaDB v2 API compatibility
+            const chromaUrl = this.config.url || process.env.CHROMA_URL || "http://localhost:8000";
+            const url = new URL(chromaUrl);
+            
+            // Create ChromaClient with v2 API format
+            const { ChromaClient } = await import("chromadb");
+            const chromaClient = new ChromaClient({
+                host: url.hostname,
+                port: parseInt(url.port) || (url.protocol === 'https:' ? 443 : 80),
+                ssl: url.protocol === 'https:'
+            });
+            
             this.vectorStore = new Chroma(this.embeddings, {
-                url: this.config.url || process.env.CHROMA_URL,              
+                index: chromaClient, // index is the parameter for an own client
                 collectionName: this.collectionName,
                 collectionMetadata: { 
                     "hnsw:space": "cosine",
@@ -120,6 +132,7 @@ export class ChromaManager {
             throw error;
         }
     }
+
 
     /**
      * Get embedding function name for ChromaDB metadata
