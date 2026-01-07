@@ -198,8 +198,14 @@ export class ChromaManager {
     public async deleteCollection(): Promise<void> {
         try {
             const { ChromaClient } = await import("chromadb");
+            const chromaUrl = this.config.url || process.env.CHROMA_URL || "http://localhost:8000";
+            
+            // Parse URL for ChromaDB v2 API
+            const url = new URL(chromaUrl);
             const client = new ChromaClient({
-                path: this.config.path || process.env.CHROMA_URL,
+                host: url.hostname,
+                port: parseInt(url.port) || (url.protocol === 'https:' ? 443 : 80),
+                ssl: url.protocol === 'https:'
             });
 
             await client.deleteCollection({ name: this.collectionName });
@@ -299,9 +305,14 @@ export async function deleteChromaCollection(
     try {
         // Use Chroma client directly for collection deletion
         const { ChromaClient } = await import("chromadb");
+        const chromaUrl = process.env.CHROMA_URL || "http://localhost:8000";
+        
+        // Parse URL for ChromaDB v2 API
+        const url = new URL(chromaUrl);
         const client = new ChromaClient({
-            path: process.env.CHROMA_URL,
-
+            host: url.hostname,
+            port: parseInt(url.port) || (url.protocol === 'https:' ? 443 : 80),
+            ssl: url.protocol === 'https:'
         });
 
         await client.deleteCollection({ name: collectionName });

@@ -10,13 +10,21 @@ const chromaManager = await getChromaManagerByServiceType(
 );
 
 const collectionInfo = chromaManager.getCollectionInfo();
-await chromaManager.deleteCollection();
+try {
+    await chromaManager.deleteCollection();
+} catch (error) {
+    console.log("Collection doesn't exist yet, will create new one");
+}
 
 const chromaManagerOPE = await getChromaManagerByServiceType(
     AIServiceType.OLLAMA,
     "ope",
 );
-await chromaManagerOPE.deleteCollection();
+try {
+    await chromaManagerOPE.deleteCollection();
+} catch (error) {
+    console.log("Collection doesn't exist yet, will create new one");
+}
 
 
 
