@@ -88,6 +88,30 @@ export abstract class BaseAIService implements IAIService {
             new StringOutputParser(),
         ]);
 
+        // Send sources metadata upfront as first quick response to avoid keep customers waiting for the generated summary.
+        if (retrievedDocsWithScores.length > 0) {
+            const sourcesEvent: RagSources = {
+                metadataType: "rag-sources",
+                sources: retrievedDocsWithScores.map(([doc, score], index) => ({
+                    id: index + 1,
+                    filename: doc.metadata?.filename ||
+                        path.basename(doc.metadata?.source || ""),
+                    page: doc.metadata?.page || doc.metadata?.page_number,
+                    collection: doc.metadata?.collection_name || collectionName,
+                    relevanceScore: Math.round(score * 1000) / 1000,
+                    preview: createSafePreview(doc.pageContent, 150),
+                    wordCount: doc.pageContent.split(" ").length,
+                    fileType: doc.metadata?.file_extension || "",
+                    chunkId: doc.metadata?.chunk_id || index,
+                })),
+                query: query,
+                collectionName: collectionName,
+            };
+
+            yield sourcesEvent;
+        }
+
+
         // Start LangChain event stream
         const eventStream = await ragChain.streamEvents(
             {
@@ -121,11 +145,11 @@ export abstract class BaseAIService implements IAIService {
                     yield e.data.chunk.content;
                     continue;
                 }
-                
+
                 // Handle parser stream events (final output from StringOutputParser)
                 if (
                     e.event === "on_parser_stream" &&
-                    e.data?.chunk && 
+                    e.data?.chunk &&
                     typeof e.data.chunk === "string"
                 ) {
                     yield e.data.chunk;
@@ -143,7 +167,7 @@ export abstract class BaseAIService implements IAIService {
                     } catch {
                         // If it's plain text (not JSON/array), yield it
                         const s = e.data.trim();
-                        const isStructured = 
+                        const isStructured =
                             (s.startsWith("[") && s.endsWith("]")) ||
                             (s.startsWith("{") && s.endsWith("}"));
                         if (!isStructured) {
@@ -154,29 +178,29 @@ export abstract class BaseAIService implements IAIService {
                 }
             }
         }
-        
-        // Send sources metadata after streaming completes
-        if (retrievedDocsWithScores.length > 0) {
-            const sourcesEvent: RagSources = {
-                metadataType: "rag-sources",
-                sources: retrievedDocsWithScores.map(([doc, score], index) => ({
-                    id: index + 1,
-                    filename: doc.metadata?.filename ||
-                        path.basename(doc.metadata?.source || ""),
-                    page: doc.metadata?.page || doc.metadata?.page_number,
-                    collection: doc.metadata?.collection_name || collectionName,
-                    relevanceScore: Math.round(score * 1000) / 1000,
-                    preview: createSafePreview(doc.pageContent, 150),
-                    wordCount: doc.pageContent.split(" ").length,
-                    fileType: doc.metadata?.file_extension || "",
-                    chunkId: doc.metadata?.chunk_id || index,
-                })),
-                query: query,
-                collectionName: collectionName,
-            };
 
-            yield sourcesEvent;
-        }
+        // // Send sources metadata after streaming completes
+        // if (retrievedDocsWithScores.length > 0) {
+        //     const sourcesEvent: RagSources = {
+        //         metadataType: "rag-sources",
+        //         sources: retrievedDocsWithScores.map(([doc, score], index) => ({
+        //             id: index + 1,
+        //             filename: doc.metadata?.filename ||
+        //                 path.basename(doc.metadata?.source || ""),
+        //             page: doc.metadata?.page || doc.metadata?.page_number,
+        //             collection: doc.metadata?.collection_name || collectionName,
+        //             relevanceScore: Math.round(score * 1000) / 1000,
+        //             preview: createSafePreview(doc.pageContent, 150),
+        //             wordCount: doc.pageContent.split(" ").length,
+        //             fileType: doc.metadata?.file_extension || "",
+        //             chunkId: doc.metadata?.chunk_id || index,
+        //         })),
+        //         query: query,
+        //         collectionName: collectionName,
+        //     };
+
+        //     yield sourcesEvent;
+        // }
     }
 
     async generateRAGResponse(
